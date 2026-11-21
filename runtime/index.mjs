@@ -1,3 +1,4 @@
+import {fetchRelease,notifyRelease} from './updates.mjs';
 import {DesktopCloud} from './cloud.mjs';
 import {createVisit,actOnVisit,expireVisits} from '../shared/visits.mjs';
 import http from 'node:http';
@@ -30,7 +31,10 @@ for(const m of state.messages)if(m.cloudEventKey&&m.cloudStatus==='done'&&(m.tex
 if(legacyReportsChanged)save();
 const jobs=new Map();const clients=new Set();let engines=await detect();
 let cloud;
-const snapshot=()=>{if(expireVisits(state.visits))save();return ({...state,cloud:cloud?.snapshot(),engines,presets,directory:state.agents.filter(a=>a.public!==false).map(publicCard),busy:[...jobs.keys()]})};
+const updateInfo={currentVersion:JSON.parse(readFileSync(join(root,'package.json'),'utf8')).version,latestVersion:null,lastCheckedAt:null,error:''};
+let checkingUpdates=false;
+async function checkUpdates(){if(checkingUpdates)return;checkingUpdates=true;try{const release=await fetchRelease();updateInfo.latestVersion=release.version;updateInfo.lastCheckedAt=Date.now();updateInfo.error='';if(notifyRelease(state,release,updateInfo.currentVersion,addMessage))persist();else notify();}catch{updateInfo.error='暂时无法检查更新，稍后会自动重试';notify();}finally{checkingUpdates=false;}}
+const snapshot=()=>{if(expireVisits(state.visits))save();return ({...state,updates:updateInfo,cloud:cloud?.snapshot(),engines,presets,directory:state.agents.filter(a=>a.public!==false).map(publicCard),busy:[...jobs.keys()]})};
 function notify(){for(const c of clients)c.write(`data: ${JSON.stringify(snapshot())}\n\n`)}
 function persist(){save();notify()}
 function addMessage(agentId,role,text,extra={}){const m={id:randomUUID(),agentId,role,text,createdAt:Date.now(),...extra};state.messages.push(m);return m}
@@ -96,6 +100,8 @@ function send(res,code,data){res.writeHead(code,{'Content-Type':'application/jso
 cloud=new DesktopCloud({dir:resolve(process.env.CLIENT_DATA_DIR||(process.env.COMPANION_DATA_DIR?join(dataDir,'cloud-client'):join(root,'.data/client'))),getAgent:id=>state.agents.find(a=>a.id===id),onChange:notify,onOwnerEvent:({key,agentId,text,messageId,status,ownerConfirmed,role='assistant',reportKind})=>{if(!state.agents.some(a=>a.id===agentId))return false;if(!state.messages.some(m=>m.cloudEventKey===key)){addMessage(agentId,role,text,{status:'done',...(reportKind==='receipt'?{channel:'agent-detail'}:{}),cloudReportKind:reportKind,cloudEventKey:key,cloudMessageId:messageId,cloudStatus:status,cloudOwnerConfirmed:ownerConfirmed});persist();}return true;}});
 const cloudTimer=setInterval(()=>void cloud.poll(),5000);cloudTimer.unref();
 void cloud.start();
+const updateStartup=setTimeout(()=>void checkUpdates(),10000);updateStartup.unref();
+const updateTimer=setInterval(()=>void checkUpdates(),30*60000);updateTimer.unref();
 const server=http.createServer(async(req,res)=>{
  const url=new URL(req.url,origin);
  if(req.headers.host!==`127.0.0.1:${port}`&&req.headers.host!==`localhost:${port}`){return send(res,403,{error:'仅允许本机访问'})}
@@ -108,6 +114,7 @@ const server=http.createServer(async(req,res)=>{
  if(url.pathname==='/api/events'){res.writeHead(200,{'Content-Type':'text/event-stream','Cache-Control':'no-cache','Connection':'keep-alive'});clients.add(res);res.write(`data: ${JSON.stringify(snapshot())}\n\n`);req.on('close',()=>clients.delete(res));return;}
  if(req.method!=='POST')return send(res,405,{error:'不支持的方法'});
  const b=await body(req);const p=url.pathname;
+ if(p==='/api/updates/check'){await checkUpdates();return send(res,200,updateInfo);}
  if(p==='/api/cloud/connect'){await cloud.connect(b);return send(res,200,{ok:true});}
  if(p.startsWith('/api/cloud/')){await cloud.action(p.slice('/api/cloud/'.length),b);return send(res,200,{ok:true});}
  if(p==='/api/register'||p==='/api/register-batch'){
@@ -182,6 +189,6 @@ const server=http.createServer(async(req,res)=>{
 });
 server.listen(port,'127.0.0.1',()=>{console.log(`Companion ready: ${origin}`);for(const a of state.agents){processInvites(a.id);drain(a.id)}});
 setInterval(()=>{for(const c of clients)c.write(': keepalive\n\n')},20000).unref();
-for(const sig of ['SIGTERM','SIGINT'])process.on(sig,async()=>{clearInterval(cloudTimer);for(const c of jobs.values())c.abort();server.close();await cloud.close();db.close();process.exit()});
+for(const sig of ['SIGTERM','SIGINT'])process.on(sig,async()=>{clearInterval(cloudTimer);clearInterval(updateTimer);clearTimeout(updateStartup);for(const c of jobs.values())c.abort();server.close();await cloud.close();db.close();process.exit()});
 
 const visitExpiry=setInterval(()=>{if(expireVisits(state.visits))persist()},5000);visitExpiry.unref();

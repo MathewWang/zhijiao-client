@@ -19,7 +19,7 @@ try{
  run('npm',['--version'],true);
  console.log(`知交信使 · Node ${process.versions.node} · ${root}`);
  if(mode==='check'){
-  for(const command of ['codex','opencode']){
+  for(const command of ['codex','opencode','traecli']){
    const r=spawnSync(command,['--version'],{encoding:'utf8'});
    console.log(`${command}：${r.status===0?'已安装（请在注册页确认模型连接）':'未检测到，请先安装并登录至少一种本机引擎'}`);
   }

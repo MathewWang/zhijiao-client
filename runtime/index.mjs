@@ -141,6 +141,19 @@ const server=http.createServer(async(req,res)=>{
  agentBy(b.id);state.primaryAgentId=b.id;persist();
  }else if(p==='/api/agents'){
  throw Error('请从首页完成助理注册，本版不支持实验室直接创建');
+ }else if(p==='/api/engine'){
+ const a=agentBy(b.id);
+ if(jobs.has(a.id))throw Error('助理正在忙，请等待当前任务结束后切换');
+ if(b.verifyConnection!==true)throw Error('请先同意测试模型连接');
+ if(!['codex','opencode','trae'].includes(b.engine))throw Error('请选择可用引擎');
+ const model=typeof b.model==='string'?b.model.trim():'';
+ if(model.length>150||(b.engine==='opencode'&&!model))throw Error('请检查模型标识');
+ const controller=new AbortController();jobs.set(a.id,controller);notify();
+ try{
+ engines=await detect();if(!engines.find(e=>e.id===b.engine)?.installed)throw Error('未找到所选 CLI，请先安装并登录');
+ await runAgent({agent:{...a,engine:b.engine,model},history:[],message:'只回复：连接成功。不要使用任何工具。',dataDir,signal:controller.signal});
+ a.engine=b.engine;a.model=model;a.verifiedAt=Date.now();a.lastError='';save();
+ }finally{jobs.delete(a.id);notify();}
  }else if(p==='/api/profile'){
  const a=agentBy(b.id);
  if(typeof b.ownerName==='string'&&b.ownerName.trim())a.ownerName=b.ownerName.trim().slice(0,60);

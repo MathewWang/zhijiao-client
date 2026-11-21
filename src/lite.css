@@ -163,3 +163,4 @@ html:has(.history-page),html:has(.history-page) body,html:has(.history-page) #ro
  .desktop-space.panel-left .whisper-panel{transform-origin:right 70%;transform:translate3d(35px,0,0) scale(.86,.96)}
  .desktop-space.panel-left .companion-anchor.expanded .whisper-panel{transform:translate3d(0,0,0) scale(1)}
 }
+.engine-settings{border-bottom:1px solid var(--line,#b6a58433);padding-bottom:18px;margin-bottom:18px}.engine-settings select{width:100%;margin-top:7px;border:1px solid #b7a28055;border-radius:8px;padding:10px;color:inherit;background:#302b25;font:inherit}.engine-settings option{background:#302b25;color:#eee}.engine-settings .lite-hint{line-height:1.7}.engine-settings button:disabled{opacity:.5;cursor:wait}

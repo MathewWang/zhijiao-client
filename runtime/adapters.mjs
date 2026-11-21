@@ -2,12 +2,13 @@ import {spawn} from 'node:child_process';
 import {mkdirSync} from 'node:fs';
 import {join} from 'node:path';
 export function parseEvent(engine,e){
- if(engine==='codex' && e.type==='item.completed' && e.item?.type==='agent_message') return e.item.text;
+ if(['codex','trae'].includes(engine) && e.type==='item.completed' && e.item?.type==='agent_message') return e.item.text;
  if(engine==='opencode' && e.type==='text') return e.part?.text || '';
  return '';
 }
 // Adapter contract: id, label, command, args(model), env, parse(event).
 export const adapters={
+ trae:{label:'TRAE',command:'traecli',args:model=>['exec','--ignore-user-config','--ignore-rules','--skip-git-repo-check','--ephemeral','--sandbox','read-only','--json','-c','approval_policy="never"',...(model?['--model',model]:[]),'-'],env:{}},
  codex:{label:'Codex',command:'codex',args:()=>['exec','--ignore-user-config','--skip-git-repo-check','--ephemeral','--sandbox','read-only','--json','-c','approval_policy="never"','-'],env:{}},
  opencode:{label:'OpenCode + GLM',command:'opencode',args:model=>['run','--pure','--format','json',...(model?['--model',model]:[])],env:{OPENCODE_CONFIG_CONTENT:JSON.stringify({permission:'deny',share:'disabled',autoupdate:false}),OPENCODE_PERMISSION:JSON.stringify({'*':'deny'}),OPENCODE_DISABLE_CLAUDE_CODE:'true',OPENCODE_DISABLE_EXTERNAL_SKILLS:'true',OPENCODE_DISABLE_PROJECT_CONFIG:'true',OPENCODE_DISABLE_AUTOUPDATE:'true'}}
 };

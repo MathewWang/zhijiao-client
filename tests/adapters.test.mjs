@@ -11,3 +11,5 @@ test('engine allowlist, no shell command interpolation, OpenCode tools denied',(
  assert.ok(adapters.codex.args().includes('read-only'));assert.equal(adapters.bash,undefined);
  assert.deepEqual(adapters.opencode.args('a; echo bad').slice(-2),['--model','a; echo bad']);
 });
+
+test('TRAE uses structured final replies and read-only ephemeral calls',()=>{assert.equal(parseEvent('trae',{type:'item.completed',item:{type:'agent_message',text:'hello'}}),'hello');assert.equal(parseEvent('trae',{type:'item.completed',item:{type:'reasoning',text:'private'}}),'');assert.ok(adapters.trae.args().includes('read-only'));assert.ok(adapters.trae.args().includes('--ignore-user-config'));});

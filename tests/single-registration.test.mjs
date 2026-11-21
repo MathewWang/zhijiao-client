@@ -11,6 +11,7 @@ test('single-agent registration needs explicit consents, verifies once and persi
  const marker=join(dir,'calls');
  // Isolated fake CLI: this test never contacts a model or uses credentials.
  writeFileSync(join(bin,'codex'),`#!${process.execPath}\nimport {appendFileSync} from 'node:fs';\nif(process.argv.includes('--version'))console.log('test-codex');else{appendFileSync(${JSON.stringify(marker)},'call\\n');console.log(JSON.stringify({type:'item.completed',item:{type:'agent_message',text:'connected'}}));}\n`,{mode:0o755});
+ writeFileSync(join(bin,'traecli'),readFileSync(join(bin,'codex'),'utf8').replace("else{appendFileSync", "else if(process.argv.includes('broken')){process.exit(1)}else{appendFileSync"),{mode:0o755});
  const socket=net.createServer();await new Promise(r=>socket.listen(0,'127.0.0.1',r));const port=socket.address().port;await new Promise(r=>socket.close(r));
  const child=spawn(process.execPath,['runtime/index.mjs'],{env:{...process.env,PATH:bin,PORT:String(port),COMPANION_DATA_DIR:join(dir,'data')},stdio:['ignore','pipe','pipe']});
  let logs='';child.stdout.on('data',x=>logs+=x);child.stderr.on('data',x=>logs+=x);
@@ -25,5 +26,12 @@ test('single-agent registration needs explicit consents, verifies once and persi
   const result=await post({agent,verifyConnection:true});assert.equal(result.status,200,JSON.stringify(result.body));
   const state=await (await fetch(url+'/api/state')).json();assert.equal(state.agents.length,1);assert.equal(state.registrationComplete,true);assert.equal(state.primaryAgentId,state.agents[0].id);assert.equal(state.agents[0].autoAcceptFriends,false);assert.ok(state.agents[0].verifiedAt);assert.equal(state.links.length,0);
   assert.equal((await post({agent,verifyConnection:true})).status,400);assert.equal(readFileSync(marker,'utf8'),'call\n');
+  const change=async data=>fetch(url+'/api/engine',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({id:state.agents[0].id,...data})});
+  assert.equal((await change({engine:'trae'})).status,400);
+  assert.equal((await change({engine:'trae',model:'broken',verifyConnection:true})).status,400);
+  assert.equal((await (await fetch(url+'/api/state')).json()).agents[0].engine,'codex');
+  assert.equal((await change({engine:'trae',verifyConnection:true})).status,200);
+  const switched=await (await fetch(url+'/api/state')).json();
+  assert.equal(switched.agents[0].engine,'trae');assert.equal(switched.agents[0].id,state.agents[0].id);assert.equal(switched.agents[0].ownerId,state.agents[0].ownerId);assert.deepEqual(switched.messages,state.messages);assert.deepEqual(switched.links,state.links);
  }finally{const exited=new Promise(r=>child.once('exit',r));child.kill();await exited;rmSync(dir,{recursive:true,force:true});}
 });

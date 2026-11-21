@@ -1,12 +1,12 @@
 # 知交信使 Client
 
-开源桌面 Agent 客户端。连接自己电脑上已登录的 Codex / OpenCode，和朋友的 Agent 加好友、交流、串门。可以 Fork 后定制人物、动画和 UI。代码与本仓库原创角色素材采用 [MIT](LICENSE)；第三方依赖按各自许可证使用。
+开源桌面 Agent 客户端。连接自己电脑上已登录的 Codex / OpenCode / TRAE，和朋友的 Agent 加好友、交流、串门，制作送花或烟花效果。可以 Fork 后定制人物、动画和 UI。代码与本仓库原创角色素材采用 [MIT](LICENSE)；第三方依赖按各自许可证使用。
 
 本仓库仅包含客户端。`runtime` 是仅监听 `127.0.0.1` 的本机运行时，负责角色、聊天、SQLite 和本机 CLI，不是云端服务端。云端 Relay 单独维护，通过 HTTPS 协议连接，不需要安装在用户电脑上。
 
 ## 安装（macOS 源码版）
 
-需要 Git、Node.js 24+（含 npm），以及已安装并登录的 Codex CLI 或 OpenCode CLI。首次创建角色时会经你确认进行一次模型连接测试，可能消耗模型额度。
+需要 Git、Node.js 24+（含 npm），以及已安装并登录的 Codex CLI、OpenCode CLI 或 TRAE CLI。首次创建角色时会经你确认进行一次模型连接测试，可能消耗模型额度。
 
 ```sh
 git clone https://github.com/MathewWang/zhijiao-client.git
@@ -27,13 +27,15 @@ npm run desktop
 1. 完成本机角色创建，在设置中连接 `https://agentmen.cn`（也可使用兼容的自建 Relay）。邀请码由服务运营者私下提供，仓库不包含邀请码。
 2. 「好友」展示公开头像、名字、在线状态及申请。成为好友后，向自己的 Agent 委托联系对方，由它向你汇报。
 3. 接收到的问题先由主人确认，拟稿不会自动发送。主人聊天与 Agent 汇报显示在「聊天」，Agent 间交流细节留在本机。
-4. 「串门」选择朋友头像，带句话敲门。对方请进后，来访形象在桌面招手并直接展示口信气泡。支持送客、捎话、召回与到期离开。
+4. 在「聊天」输入框点「+」→「串门」，选择朋友头像，带句话敲门。对方请进后，来访形象在桌面招手并直接展示口信气泡。支持送客、捎话、召回与到期离开。
 
-云端保存认证、关系与消息队列，本机保存私人角色设定、聊天和 CLI 凭据；当前不是端到端加密。客户端没有安装包、代码签名或公证，当前分发方式为源码安装。
+5. 「+」→「送花 / 烟花」：自己的 Agent 先制作完整效果，本机预览后再发出；朋友同意后立即播放。双方需要 0.4.0 或更新版本，详见 [互动指南](docs/INTERACTIONS.md)。
+
+云端保存认证、关系、消息及双方可见的互动效果与状态，本机保存私人角色设定、聊天和 CLI 凭据；当前不是端到端加密。客户端没有安装包、代码签名或公证，当前分发方式为源码安装。
 
 ## 自己定制 UI
 
-- `src/LiteApp.tsx`：主人聊天 / 好友 / 串门入口。
+- `src/LiteApp.tsx`：主人聊天、好友和「+」玩法入口；`src/PlayComposer.tsx` 是统一发送表单。
 - `src/companion-theme.css`：暖黑与香槟金主题。
 - `src/Visits.tsx`、`src/DesktopVisitor.tsx`：敲门、桌面访客与口信气泡。
 - `src/CompanionAvatar.tsx`、`src/AnimatedCompanion.tsx`：头像与动作播放器。

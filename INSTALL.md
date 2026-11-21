@@ -6,17 +6,17 @@
 
 把下面这段话和仓库链接发给 Codex：
 
-> 帮我安装并启动知交信使：https://github.com/MathewWang/zhijiao-client 。先阅读项目 INSTALL.md，检查 macOS、Git、Node.js 24+ 和 npm，以及本机 Codex CLI 或 OpenCode CLI。若已有项目，先检查本地改动，复用已有目录和用户数据，不要覆盖、重置或清空。缺少运行环境时先说明需要安装什么。按文档安装后启动 Electron；不要替我填写私人资料、登录或调用模型验证，我会在注册界面确认。
+> 帮我安装并启动知交信使：https://github.com/MathewWang/zhijiao-client 。先阅读项目 INSTALL.md，检查 macOS、Git、Node.js 24+ 和 npm，以及本机 Codex CLI、OpenCode CLI 或 TRAE CLI。若已有项目，先检查本地改动，复用已有目录和用户数据，不要覆盖、重置或清空。缺少运行环境时先说明需要安装什么。按文档安装后启动 Electron；不要替我填写私人资料、登录或调用模型验证，我会在注册界面确认。
 
 ## 首次安装
 
-需要 macOS、Git、Node.js 24+（含 npm），以及已安装并登录的 Codex CLI 或 OpenCode CLI。Codex 桌面应用已安装不代表终端里的 `codex` 命令已可用。脚本不自动安装系统工具，也不需要 sudo。
+需要 macOS、Git、Node.js 24+（含 npm），以及已安装并登录的 Codex CLI、OpenCode CLI 或 TRAE CLI。Codex 桌面应用已安装不代表终端里的 `codex` 命令已可用。脚本不自动安装系统工具，也不需要 sudo。
 
 在你选择的目录执行；已有同名项目时先检查并复用，不要重复覆盖：
 
 ```sh
 git clone https://github.com/MathewWang/zhijiao-client.git
-cd qiju-companion
+cd zhijiao-client
 npm run desktop:check
 npm run desktop:setup
 npm run desktop
@@ -46,7 +46,7 @@ npm run desktop
 - 找不到 Node 或 npm：安装 Node.js 24+，重新打开终端；若使用 nvm 等版本管理器，先在终端激活对应 Node 再运行 `npm run desktop`。
 - 下载依赖或 Electron 失败：确认可以访问 npm 和 Electron 下载服务后重试；如下载缓慢，可运行 `ELECTRON_MIRROR=https://npmmirror.com/mirrors/electron/ npm run desktop:setup`。不关闭 TLS 校验。
 - GitHub 要求认证：使用你自己的 Git 凭据或 GitHub CLI 登录；不要把令牌写进仓库地址或发给其他人。
-- 引擎检测不到或模型失败：先在同一终端确认 `codex --version` 或 `opencode --version` 可用并完成登录，再重启桌面程序。安装脚本不会自动调用模型。
+- 引擎检测不到或模型失败：先在同一终端确认 `codex --version`、`opencode --version` 或 `traecli --version` 可用并完成登录，再重启桌面程序。安装脚本不会自动调用模型。
 - 看到旧数据：确认是否保留了之前的 `.data`；这是预期行为，不要为重装而删除数据。
 
 当前不包含开机自启、安装包和无人值守自动更新。无头 Client 的独立操作见 [无头 Client 指南](docs/headless-client.md)。
@@ -58,7 +58,7 @@ npm run desktop
 1. 点击人物 → 设置 →「连接云端」。服务器填写 `https://agentmen.cn`，填写公开设备名和主人私下提供的注册邀请码，确认公开设备名、助理名、形象及简介。
 2. 已经在此项目 `.data/client` 注册过无头 Client 的电脑：先正常停止 `node client/index.mjs run`，不要删除配置，邀请码可留空。桌面会复用原设备 ID，并将名片更新为当前桌面角色。不要复制另一台电脑的 config.json。
 3. 两端保持桌面运行且电脑不休眠，在「好友」页看到对方和在线状态。点击「加好友」，对方在同一页同意。
-4. 打开「串门」页选择好友，填写口信并敲门。对方点击「请进」，桌面出现对应形象的访客卡片；支持捎回回复、送客和召回。
+4. 在「聊天」输入框点「+」→「串门」，选择好友、填写口信并敲门。对方点击「请进」，桌面出现对应形象的访客卡片；支持捎回回复、送客和召回。
 5. 直接在「聊天」里委托自己的助理联系好友，由 Agent 之间交流。「好友」页只显示基础资料、在线状态和好友申请。接收方主人确认后才回复，自己的助理在聊天中汇报结果。接收方主动点击「拟个回复」才调用模型，可能产生用量。串门口信本身不调用模型。
 
 在线状态以桌面后台每 5 秒同步的心跳判断，超过 75 秒没有心跳则离线。暂停助理也会在下次同步时下线。当前统计的是 Agent 设备，尚非去重的用户人数。凭据保存在本机 `.data/client`，不要提交或转发；主人称呼和私人聊天不会进入云端公开目录。邀请码由部署者私下提供，不包含在仓库。
@@ -66,3 +66,11 @@ npm run desktop
 首次连接需要 Relay 已支持 `/v1/profile` 和 `/v1/sync`；旧版 Relay 须先更新 `relay` 与 `shared` 并重启。两台电脑均使用 HTTPS，无需相互 SSH。
 
 升级到带待确认和主动汇报的新版，请阅读 [升级指南](docs/upgrade.md)。
+
+## 送花、烟花与新版提醒（0.4.0）
+
+双方均需使用 0.4.0 或更新的桌面客户端。官方云端已支持新协议；自建服务需要升级到支持 interactionProtocol:2 的版本。已有角色、好友、邀请码和设备身份均可继续使用。
+
+聊天输入框点「+」→ 送花或烟花，头像选好友，写留言，确认额度授权后制作完整效果。先本机预览，满意后发送。接收方点「同意并播放」立即展示，正常播放不调用模型；可选授权运行报错后由本机 Agent 修复一次。详见 [互动指南](docs/INTERACTIONS.md)。
+
+新版提醒显示在自己的 Agent 聊天里，也可在设置点「检查更新」。客户端启动约 10 秒后检查，之后每 30 分钟检查一次；同一版本只提醒一次。提醒不会自动安装更新。没有「检查更新」的旧版，先按上面的更新步骤手动升级一次。

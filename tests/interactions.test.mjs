@@ -11,3 +11,26 @@ test('generator saves validated local artifact, retries receipts without recodin
 });
 test('renderer wrapper places network and form restrictions before generated content and escapes context',()=>{const html=wrapPresentation('<p>hello</p>',{message:'</script><img src=x>'});assert.ok(html.indexOf('Content-Security-Policy')<html.indexOf('<p>'));assert.ok(html.includes("frame-src 'none'"));assert.ok(html.includes('\\u003c/script>'));assert.throws(()=>wrapPresentation('x'.repeat(60001),{}));});
 test('cancelled interaction cannot publish a late model result',async()=>{const dir=mkdtempSync(join(tmpdir(),'zj-cancel-')),items=[];const i=createInteraction(items,{from:'a',to:'b',key:'c',plan:plan()},()=>true);let resolve;const cloud={config:{id:'b'},state:{interactions:items},client:{api:async(p,b)=>actInteraction(items,{...b,actor:'b'})},poll:async()=>{}};const runtime=new InteractionRuntime({dbPath:join(dir,'e.sqlite'),cloud,dataDir:dir,getAgent:()=>({id:'b',enabled:true}),runner:()=>new Promise(r=>resolve=r)});try{await runtime.generate(i.id);actInteraction(items,{id:i.id,actor:'a',action:'cancel'});resolve('<div>flowers</div>');while(runtime.jobs.size)await new Promise(r=>setTimeout(r,10));assert.equal(i.status,'cancelled');assert.throws(()=>runtime.artifact(i.id,{}));}finally{await runtime.close();rmSync(dir,{recursive:true,force:true});}});
+
+const prepared=()=>({...plan(),version:2,artifact:{html:'<div>flowers</div><script>document.body.dataset.ready="1"</script>'}});
+test('sender builds portable artifact; recipient accepts and plays with zero model calls, repairs once on error',async()=>{
+ const dir=mkdtempSync(join(tmpdir(),'zj-prepared-')),items=[];let actor='a',calls=0;
+ const cloud={config:{id:'b'},state:{interactions:items,directory:[]},client:{api:async(p,b)=>actInteraction(items,{...b,actor})},poll:async()=>{}};
+ const runtime=new InteractionRuntime({dbPath:join(dir,'e.sqlite'),cloud,dataDir:dir,getAgent:()=>({id:'local',enabled:true}),runner:async()=>{calls++;return '<div>repaired flowers</div>';}});
+ try{
+  const made=await runtime.draft({kind:'gift.flowers',message:'Hi',brief:'Flowers'});assert.equal(made.version,2);assert.match(made.artifact.sha256,/^[a-f0-9]{64}$/);assert.equal(calls,1);
+  const i=createInteraction(items,{from:'a',to:'b',key:'prepared',plan:made},()=>true);actor='b';
+  await runtime.action({id:i.id,action:'accept'});assert.equal(i.status,'playing');assert.equal(calls,1);assert.match(runtime.artifact(i.id,{}),/repaired flowers/);
+  await runtime.action({id:i.id,action:'accept'});assert.equal(i.attempt,1);assert.equal(calls,1);
+  await runtime.action({id:i.id,action:'fail',error:'ReferenceError: petals is undefined'});assert.equal(i.status,'failed');assert.throws(()=>actInteraction(items,{id:i.id,actor,action:'accept'}));
+  await runtime.action({id:i.id,action:'repair'});assert.equal(calls,2);assert.equal(i.status,'ready');assert.equal(i.attempt,2);
+  await runtime.action({id:i.id,action:'play'});assert.equal(i.status,'playing');await runtime.action({id:i.id,action:'fail',error:'still broken'});
+  await assert.rejects(runtime.action({id:i.id,action:'repair'}),/已尝试修复/);assert.equal(calls,2);
+ }finally{await runtime.close();rmSync(dir,{recursive:true,force:true});}
+});
+test('prepared artifact validates size and integrity; accept refuses overlapping playback before changing state',()=>{
+ assert.throws(()=>normalizePlan({...prepared(),artifact:{html:'<div>x</div>',sha256:'wrong'}}),/校验/);
+ assert.throws(()=>normalizePlan({...prepared(),artifact:{html:'<div>'+ '花'.repeat(21000)+'</div>'}}),/60KB/);
+ const items=[];const one=createInteraction(items,{from:'a',to:'b',key:'1',plan:prepared()},()=>true),two=createInteraction(items,{from:'a',to:'b',key:'2',plan:prepared()},()=>true);
+ actInteraction(items,{id:one.id,actor:'b',action:'accept'});assert.throws(()=>actInteraction(items,{id:two.id,actor:'b',action:'accept'}),/正在展示/);assert.equal(two.status,'pending');assert.equal(two.attempt,0);
+});

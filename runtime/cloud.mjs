@@ -61,7 +61,7 @@ export class DesktopCloud {
    this.config.agent=normalizeAgent({...agent,publishProfile:true});
    const card=JSON.stringify(this.profile(agent));
    if(card!==this.profileJSON){await this.client.api('/v1/profile',{profile:JSON.parse(card),publishProfile:true});this.profileJSON=card;this.save();}
-   const data=await this.client.api('/v1/sync',{online:agent.enabled,interactionProtocol:1});
+   const data=await this.client.api('/v1/sync',{online:agent.enabled,interactionProtocol:2});
    this.publish({...data,connected:true,error:''});
    if(agent.enabled&&!this.processing){
     this.processing=this.client.tick(this.abort.signal).catch(e=>this.publish({error:e.message})).finally(()=>{this.processing=null;if(!this.closed)this.refreshMessages();});

@@ -1,4 +1,4 @@
-import {InteractionRuntime,PLAY_CATALOG} from './interaction-runtime.mjs';
+import {InteractionRuntime,PLAY_CATALOG,wrapPresentation} from './interaction-runtime.mjs';
 import {normalizePlan} from '../shared/interactions.mjs';
 import {fetchRelease,notifyRelease} from './updates.mjs';
 import {DesktopCloud} from './cloud.mjs';
@@ -97,7 +97,7 @@ for(const m of state.messages)if(m.status==='processing')m.status='queued';
 for(const a of state.agents){const own=state.messages.filter(m=>m.agentId===a.id&&!m.channel);const last=own.at(-1);if(last?.role==='user'&&!last.status)last.status='queued';}
 const port=Number(process.env.PORT||4317);const origin=`http://127.0.0.1:${port}`;
 const vite=process.env.COMPANION_DEV!=='1'&&existsSync(join(root,'dist/index.html'))?null:await (await import('vite')).createServer({root,server:{middlewareMode:true,host:'127.0.0.1'},appType:'spa'});
-async function body(req){let str='';for await(const c of req){str+=c;if(str.length>32000)throw Error('内容过长')}return JSON.parse(str||'{}')}
+async function body(req){let str='';for await(const c of req){str+=c;if(Buffer.byteLength(str)>262144)throw Error('内容过长')}return JSON.parse(str||'{}')}
 function send(res,code,data){res.writeHead(code,{'Content-Type':'application/json'});res.end(JSON.stringify(data))}
 cloud=new DesktopCloud({dir:resolve(process.env.CLIENT_DATA_DIR||(process.env.COMPANION_DATA_DIR?join(dataDir,'cloud-client'):join(root,'.data/client'))),getAgent:id=>state.agents.find(a=>a.id===id),onChange:()=>{notify();if(interactions){interactions.reports();void interactions.flush();}},onOwnerEvent:({key,agentId,text,messageId,status,ownerConfirmed,role='assistant',reportKind})=>{if(!state.agents.some(a=>a.id===agentId))return false;if(!state.messages.some(m=>m.cloudEventKey===key)){addMessage(agentId,role,text,{status:'done',...(reportKind==='receipt'?{channel:'agent-detail'}:{}),cloudReportKind:reportKind,cloudEventKey:key,cloudMessageId:messageId,cloudStatus:status,cloudOwnerConfirmed:ownerConfirmed});persist();}return true;}});
 const cloudTimer=setInterval(()=>void cloud.poll(),5000);cloudTimer.unref();
@@ -123,9 +123,14 @@ const server=http.createServer(async(req,res)=>{
  const b=await body(req);const p=url.pathname;
  if(p==='/api/updates/check'){await checkUpdates();return send(res,200,updateInfo);}
  if(p==='/api/interactions/draft'){
- if(b.confirmCost!==true)throw Error('请先确认本次模型生成');const a=agentBy(cloud.config?.localAgentId);if(jobs.has(a.id))throw Error('助理正在忙');const c=new AbortController();jobs.set(a.id,c);notify();try{return send(res,200,{plan:await interactions.draft(b,c.signal)});}finally{jobs.delete(a.id);notify();}}
+ if(b.confirmCost!==true)throw Error('请先确认本次模型生成');const a=agentBy(cloud.config?.localAgentId);if(jobs.has(a.id)||interactions.jobs.size)throw Error('助理正在忙');const c=new AbortController();jobs.set(a.id,c);notify();try{return send(res,200,{plan:await interactions.draft(b,c.signal)});}finally{jobs.delete(a.id);notify();}}
+ if(p==='/api/interactions/preview'){
+ const plan=normalizePlan(b.plan);if(plan.version!==2)throw Error('请先制作效果');
+ const sender=agentBy(cloud.config?.localAgentId),recipient=cloud.state.directory.find(d=>d.id===b.to);
+ const asset=skin=>{const c=presets.find(c=>c.id===skin)||presets[0];return 'data:image/png;base64,'+readFileSync(join(root,'public',c.image)).toString('base64');};
+ return send(res,200,{html:wrapPresentation(plan.artifact.html,{message:plan.intent.message,assets:{sender:asset(sender.skin),recipient:asset(recipient?.profile?.skin)}})});}
  if(p==='/api/interactions/send'){if(!cloud.client)throw Error('请先连接云端');await cloud.client.api('/v1/interactions',{to:b.to,key:b.key,plan:normalizePlan(b.plan)});await cloud.poll();return send(res,200,{ok:true});}
- if(p==='/api/interactions/action'){if(b.action==='accept'&&b.confirmCost!==true)throw Error('请先确认本次创作可能消耗模型额度');await interactions.action(b);return send(res,200,{ok:true});}
+ if(p==='/api/interactions/action'){if((b.action==='repair'||b.action==='accept'&&interactions.current(b.id).plan.version!==2)&&b.confirmCost!==true)throw Error('请先确认本次创作可能消耗模型额度');await interactions.action(b);return send(res,200,{ok:true});}
  if(p==='/api/cloud/connect'){await cloud.connect(b);return send(res,200,{ok:true});}
  if(p.startsWith('/api/cloud/')){await cloud.action(p.slice('/api/cloud/'.length),b);return send(res,200,{ok:true});}
  if(p==='/api/register'||p==='/api/register-batch'){

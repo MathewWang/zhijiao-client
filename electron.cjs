@@ -1,4 +1,4 @@
-const {app,BrowserWindow,ipcMain,screen,Tray,Menu,nativeImage,shell}=require('electron');
+const {app,BrowserWindow,ipcMain,screen,Tray,Menu,nativeImage,shell,session}=require('electron');
 const {spawn}=require('node:child_process');
 const path=require('node:path');
 const {expandedBounds,characterCenter,conversationPlacement,visitorBounds}=require('./window-placement.cjs');
@@ -67,9 +67,13 @@ async function syncVisitors(){
  }catch(e){console.error('同步桌面访客失败：'+e.message)}finally{visitorsBusy=false;}
 }
 function showAll(){if(setup)setup.show();else{for(const pet of pets.values())pet.show();for(const {win} of visitors.values())win.showInactive()}}
+app.on('web-contents-created',(_event,contents)=>{contents.on('will-frame-navigate',event=>event.preventDefault());contents.setWindowOpenHandler(()=>({action:'deny'}));});
 if(!app.requestSingleInstanceLock()){app.quit();}else{
 app.on('second-instance',showAll);
 app.whenReady().then(async()=>{
+ // Generated opaque-origin frames must not send network traffic outside the local UI.
+ session.defaultSession.webRequest.onBeforeRequest({urls:['*://*/*']},(details,callback)=>{let allowed=false;try{const target=new URL(details.url);allowed=['127.0.0.1','localhost'].includes(target.hostname)&&target.port==='4317';}catch{}callback({cancel:!allowed});});
+ session.defaultSession.on('will-download',event=>event.preventDefault());
  try{await fetch(url+'/api/state')}catch{service=spawn(process.execPath,[path.join(__dirname,'runtime/index.mjs')],{env:{...process.env,ELECTRON_RUN_AS_NODE:'1',PATH:'/opt/homebrew/bin:/usr/local/bin:'+process.env.PATH},stdio:'ignore'})}
  await ready();
  ({desktopVisitors:pickVisitors}=await import('./shared/desktop-visitors.mjs'));

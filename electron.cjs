@@ -98,6 +98,8 @@ app.on('web-contents-created',(_event,contents)=>{contents.on('render-process-go
 if(!app.requestSingleInstanceLock()){app.quit();}else{
 app.on('second-instance',showAll);
 app.whenReady().then(async()=>{
+ // macOS accessory apps keep their Tray entry and windows without a Dock icon.
+ if(process.platform==='darwin')app.setActivationPolicy('accessory');
  // Generated opaque-origin frames must not send network traffic outside the local UI.
  session.defaultSession.webRequest.onBeforeRequest({urls:['*://*/*']},(details,callback)=>{let allowed=false;try{const target=new URL(details.url);allowed=['127.0.0.1','localhost'].includes(target.hostname)&&target.port==='4317';}catch{}callback({cancel:!allowed});});
  session.defaultSession.on('will-download',event=>event.preventDefault());

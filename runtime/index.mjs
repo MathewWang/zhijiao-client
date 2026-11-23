@@ -36,7 +36,7 @@ let cloud;let interactions;
 const updateInfo={currentVersion:JSON.parse(readFileSync(join(root,'package.json'),'utf8')).version,latestVersion:null,lastCheckedAt:null,error:''};
 let checkingUpdates=false;
 async function checkUpdates(){if(checkingUpdates)return;checkingUpdates=true;try{const release=await fetchRelease();updateInfo.latestVersion=release.version;updateInfo.lastCheckedAt=Date.now();updateInfo.error='';if(notifyRelease(state,release,updateInfo.currentVersion,addMessage))persist();else notify();}catch{updateInfo.error='暂时无法检查更新，稍后会自动重试';notify();}finally{checkingUpdates=false;}}
-const snapshot=()=>{if(expireVisits(state.visits))save();return ({...state,updates:updateInfo,interactionEffects:interactions?.snapshot()||[],playCatalog:PLAY_CATALOG,cloud:cloud?.snapshot(),engines,presets,directory:state.agents.filter(a=>a.public!==false).map(publicCard),busy:[...jobs.keys()]})};
+const snapshot=()=>{if(expireVisits(state.visits))save();return ({...state,updates:updateInfo,playTemplates:interactions?.templates()||[],interactionEffects:interactions?.snapshot()||[],playCatalog:PLAY_CATALOG,cloud:cloud?.snapshot(),engines,presets,directory:state.agents.filter(a=>a.public!==false).map(publicCard),busy:[...jobs.keys()]})};
 function notify(){for(const c of clients)c.write(`data: ${JSON.stringify(snapshot())}\n\n`)}
 function persist(){save();notify()}
 function addMessage(agentId,role,text,extra={}){const m={id:randomUUID(),agentId,role,text,createdAt:Date.now(),...extra};state.messages.push(m);return m}
@@ -122,6 +122,8 @@ const server=http.createServer(async(req,res)=>{
  if(req.method!=='POST')return send(res,405,{error:'不支持的方法'});
  const b=await body(req);const p=url.pathname;
  if(p==='/api/updates/check'){await checkUpdates();return send(res,200,updateInfo);}
+ if(p==='/api/interactions/templates-save')return send(res,200,interactions.saveTemplate(b));
+ if(p==='/api/interactions/templates-delete')return send(res,200,interactions.deleteTemplate(b.id));
  if(p==='/api/interactions/draft'){
  if(b.confirmCost!==true)throw Error('请先确认本次模型生成');const a=agentBy(cloud.config?.localAgentId);if(jobs.has(a.id)||interactions.jobs.size)throw Error('助理正在忙');const c=new AbortController();jobs.set(a.id,c);notify();try{return send(res,200,{plan:await interactions.draft(b,c.signal)});}finally{jobs.delete(a.id);notify();}}
  if(p==='/api/interactions/preview'){

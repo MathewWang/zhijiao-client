@@ -7,7 +7,7 @@ export function normalizePlan(p){
  const durationSeconds=p.presentation?.durationSeconds??20;if(!Number.isInteger(durationSeconds)||durationSeconds<5||durationSeconds>60)throw Error('展示时长需为 5–60 秒');
  let artifact;
  if(p.version===2){const html=p.artifact?.html;if(typeof html!=='string'||!html.trim()||Buffer.byteLength(html)>60000||!/<(?:html|body|div|canvas|svg|style|section|main|p|article)\b/i.test(html))throw Error('展示文件为空或超过 60KB');const sha256=createHash('sha256').update(html).digest('hex');if(p.artifact.sha256&&p.artifact.sha256!==sha256)throw Error('展示文件校验失败');artifact={html,sha256};}
- return {protocol:'zhijiao.interaction',version:p.version,...(artifact?{artifact}:{}),intent:{kind,message:text(p.intent?.message,500),brief:text(p.intent?.brief,2000)},presentation:{renderer:'web',durationSeconds,sound:false,dismissible:true}};
+ return {protocol:'zhijiao.interaction',version:p.version,...(artifact?{artifact}:{}),intent:{kind,...(p.intent?.title!==undefined?{title:text(p.intent.title,40)}:{}),message:text(p.intent?.message,500),brief:text(p.intent?.brief,2000)},presentation:{renderer:'web',durationSeconds,sound:false,dismissible:true}};
 }
 const terminal=new Set(['completed','declined','cancelled','expired']);
 export function expireInteractions(items,now=Date.now()){

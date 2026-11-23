@@ -1,6 +1,11 @@
-const {app,BrowserWindow,ipcMain,screen,Tray,Menu,nativeImage,shell,session}=require('electron');
+const {app,BrowserWindow,ipcMain,screen,Tray,Menu,nativeImage,shell,session,powerMonitor}=require('electron');
 const {spawn}=require('node:child_process');
 const path=require('node:path');
+const fs=require('node:fs');
+const {installDesktopRecovery}=require('./desktop-recovery.cjs');
+const logDir=path.join(__dirname,'.data');fs.mkdirSync(logDir,{recursive:true});
+function lifecycleLog(event,detail=''){try{fs.appendFileSync(path.join(logDir,'desktop-lifecycle.log'),`${new Date().toISOString()} ${event} ${detail}\n`,{mode:0o600})}catch{}}
+let disposeRecovery;
 const {expandedBounds,characterCenter,conversationPlacement,visitorBounds}=require('./window-placement.cjs');
 let service,tray,setup,visitorTimer,pickVisitors,visitorsBusy=false,quitting=false;
 const visitors=new Map();
@@ -67,15 +72,15 @@ async function syncVisitors(){
  }catch(e){console.error('同步桌面访客失败：'+e.message)}finally{visitorsBusy=false;}
 }
 function showAll(){if(setup)setup.show();else{for(const pet of pets.values())pet.show();for(const {win} of visitors.values())win.showInactive()}}
-app.on('web-contents-created',(_event,contents)=>{contents.on('will-frame-navigate',event=>event.preventDefault());contents.setWindowOpenHandler(()=>({action:'deny'}));});
+app.on('web-contents-created',(_event,contents)=>{contents.on('render-process-gone',(_event,details)=>{lifecycleLog('renderer-gone',details.reason);if(!quitting&&details.reason!=='clean-exit'&&!contents.isDestroyed())contents.reload()});contents.on('will-frame-navigate',event=>event.preventDefault());contents.setWindowOpenHandler(()=>({action:'deny'}));});
 if(!app.requestSingleInstanceLock()){app.quit();}else{
 app.on('second-instance',showAll);
 app.whenReady().then(async()=>{
  // Generated opaque-origin frames must not send network traffic outside the local UI.
  session.defaultSession.webRequest.onBeforeRequest({urls:['*://*/*']},(details,callback)=>{let allowed=false;try{const target=new URL(details.url);allowed=['127.0.0.1','localhost'].includes(target.hostname)&&target.port==='4317';}catch{}callback({cancel:!allowed});});
  session.defaultSession.on('will-download',event=>event.preventDefault());
- try{await fetch(url+'/api/state')}catch{service=spawn(process.execPath,[path.join(__dirname,'runtime/index.mjs')],{env:{...process.env,ELECTRON_RUN_AS_NODE:'1',PATH:'/opt/homebrew/bin:/usr/local/bin:'+process.env.PATH},stdio:'ignore'})}
- await ready();
+ try{await fetch(url+'/api/state')}catch{const runtimeLog=fs.openSync(path.join(logDir,'runtime.log'),'a',0o600);service=spawn(process.execPath,[path.join(__dirname,'runtime/index.mjs')],{env:{...process.env,ELECTRON_RUN_AS_NODE:'1',PATH:'/opt/homebrew/bin:/usr/local/bin:'+process.env.PATH},stdio:['ignore',runtimeLog,runtimeLog]});fs.closeSync(runtimeLog);service.on('exit',(code,signal)=>lifecycleLog('runtime-exit',JSON.stringify({code,signal})));}
+ await ready();lifecycleLog('desktop-started',String(process.pid));
  ({desktopVisitors:pickVisitors}=await import('./shared/desktop-visitors.mjs'));
  const state=await (await fetch(url+'/api/state')).json();
  if(state.registrationComplete===false){
@@ -93,7 +98,9 @@ app.whenReady().then(async()=>{
  tray=new Tray(nativeImage.createEmpty());tray.setTitle('✳');tray.setToolTip('知交信使 · 我的助理');
  tray.setContextMenu(Menu.buildFromTemplate([{label:'显示所有助理',click:showAll},{label:'查看历史聊天',click:()=>openHistory()},{type:'separator'},{label:'退出知交信使',click:()=>app.quit()}]));
  app.on('activate',showAll);
+ disposeRecovery=installDesktopRecovery({powerMonitor,screen,windows:()=>setup?[setup]:[...pets.values(),...Array.from(visitors.values(),v=>v.win)],isQuitting:()=>quitting,log:lifecycleLog});
 }).catch(e=>{console.error(e);app.quit()});
-app.on('before-quit',()=>{quitting=true;clearInterval(visitorTimer);service?.kill()});
+app.on('window-all-closed',()=>{});
+app.on('before-quit',()=>{lifecycleLog('before-quit');quitting=true;disposeRecovery?.();clearInterval(visitorTimer);service?.kill()});
 
 }

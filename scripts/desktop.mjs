@@ -1,7 +1,8 @@
-import {spawnSync} from 'node:child_process';
-import {existsSync,readFileSync,writeFileSync,mkdirSync} from 'node:fs';
+import {spawnSync,spawn} from 'node:child_process';
+import {existsSync,readFileSync,writeFileSync,mkdirSync,openSync,closeSync} from 'node:fs';
 import {createHash} from 'node:crypto';
 import {fileURLToPath} from 'node:url';
+import {createRequire} from 'node:module';
 import {dirname,resolve,join} from 'node:path';
 
 const root=resolve(dirname(fileURLToPath(import.meta.url)),'..');
@@ -39,7 +40,15 @@ try{
    mkdirSync(dirname(stamp),{recursive:true});writeFileSync(stamp,fingerprint);
   }
   run('npm',['run','build']);
-  if(mode==='launch')run(process.execPath,[join(root,'node_modules','electron','cli.js'),'.']);
+  if(mode==='launch'){
+   // Give Electron its own process group, so closing a terminal/agent session does not close the pet.
+   const log=join(root,'.data','desktop.log'),fd=openSync(log,'a',0o600);
+   const electron=createRequire(import.meta.url)('electron');
+   const child=spawn(electron,[root],{cwd:root,env:process.env,detached:true,stdio:['ignore',fd,fd]});
+   child.on('error',error=>{console.error('桌面启动失败：'+error.message);process.exitCode=1});
+   child.unref();closeSync(fd);
+   console.log('桌面已在独立后台启动，可以关闭此终端。诊断日志：'+log);
+  }
   else console.log('准备完成。运行 npm run desktop 或双击「启动知交信使.command」。');
  }
 }catch(error){console.error(`\n${error.message}\n用户资料保存在 .data 中，请勿删除。`);process.exitCode=1;}

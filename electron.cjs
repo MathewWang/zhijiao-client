@@ -6,6 +6,28 @@ const {installDesktopRecovery}=require('./desktop-recovery.cjs');
 const logDir=path.join(__dirname,'.data');fs.mkdirSync(logDir,{recursive:true});
 function lifecycleLog(event,detail=''){try{fs.appendFileSync(path.join(logDir,'desktop-lifecycle.log'),`${new Date().toISOString()} ${event} ${detail}\n`,{mode:0o600})}catch{}}
 let disposeRecovery;
+const {conversation,summarizeInbox,markConversationRead,recoveryWindows}=require('./desktop-inbox.cjs');
+const uiFile=path.join(logDir,'desktop-ui.json');
+let ui={hidden:false,seen:{}};try{const value=JSON.parse(fs.readFileSync(uiFile,'utf8'));ui={hidden:value.hidden===true,seen:value.seen&&typeof value.seen==='object'?value.seen:{}}}catch{}
+let desktopState={agents:[],messages:[]},inbox=summarizeInbox(desktopState),traySignature='';
+const saveUI=()=>{try{const temp=uiFile+'.tmp';fs.writeFileSync(temp,JSON.stringify(ui),{mode:0o600});fs.renameSync(temp,uiFile)}catch(e){lifecycleLog('ui-save-failed',e.message)}};
+function publishInbox(){const value={...inbox,hidden:ui.hidden};for(const win of [...pets.values(),...histories.values()])if(!win.isDestroyed())win.webContents.send('desktop-status',value)}
+function refreshTray(){
+ publishInbox();if(!tray)return;
+ const signature=JSON.stringify([ui.hidden,inbox]);if(signature===traySignature)return;traySignature=signature;
+ const image=nativeImage.createFromPath(path.join(__dirname,'assets/tray',inbox.total?'unread.png':'idle.png')).resize({width:22,height:22});
+ tray.setImage(image);tray.setTitle(inbox.total?String(Math.min(inbox.total,99))+(inbox.total>99?'+':''):'');
+ tray.setToolTip(`知交信使 · ${inbox.messages} 条消息 · ${inbox.plays} 个玩法待查收`);
+ const items=[{label:'知交信使 · 后台运行中',enabled:false},{label:ui.hidden?'显示桌面人物':'隐藏桌面人物',click:()=>ui.hidden?showAll():hideAll()},{type:'separator'}];
+ if(!inbox.total)items.push({label:'暂时没有新消息或待查收玩法',enabled:false});
+ for(const a of inbox.agents){if(a.messages)items.push({label:`查看${a.name}的消息（${a.messages}）`,click:()=>openDesktop(a.id,'chat')});if(a.interactions)items.push({label:`查收${a.name}的玩法（${a.interactions}）`,click:()=>openDesktop(a.id,'interactions')});if(a.visits)items.push({label:`查看${a.name}的敲门（${a.visits}）`,click:()=>openDesktop(a.id,'visits')});if(a.requests)items.push({label:`查看${a.name}的好友申请（${a.requests}）`,click:()=>openDesktop(a.id,'friends')});}
+ items.push({type:'separator'},{label:'打开聊天',click:()=>openDesktop()},{label:'查看历史聊天',click:()=>{showAll();openHistory()}},{type:'separator'},{label:'退出知交信使',click:()=>app.quit()});
+ tray.setContextMenu(Menu.buildFromTemplate(items));
+}
+function updateInbox(state){desktopState=state;let changed=false;for(const a of state.agents||[])if(ui.seen[a.id]===undefined){ui.seen[a.id]=conversation(state,a.id).at(-1)?.id||'';changed=true}if(changed)saveUI();inbox=summarizeInbox(state,ui.seen);refreshTray()}
+function hideAll(){ui.hidden=true;saveUI();for(const pet of pets.values())pet.webContents.send('desktop-open','collapse');for(const win of [...pets.values(),...histories.values(),...Array.from(visitors.values(),v=>v.win)])win.hide();refreshTray()}
+function openDesktop(id,view='chat'){showAll();const pet=pets.get(id)||pets.values().next().value;if(!pet)return;pet.show();pet.focus();const open=()=>{if(!pet.isDestroyed())pet.webContents.send('desktop-open',view)};if(pet.webContents.isLoadingMainFrame())pet.webContents.once('did-finish-load',open);else open()}
+
 const {expandedBounds,characterCenter,conversationPlacement,visitorBounds}=require('./window-placement.cjs');
 let service,tray,setup,visitorTimer,pickVisitors,visitorsBusy=false,quitting=false;
 const visitors=new Map();
@@ -33,7 +55,7 @@ function createPets(agents){
   // Each companion owns its canvas and conversation; transparent regions pass through.
   const gap=Math.min(640,Math.max(250,(work.width-260)/Math.max(1,agents.length-1)));
   const canvas=expandedBounds({x:work.x+work.width-260-index*gap,y:work.y+work.height-335,width:240,height:320},work);
-  const pet=new BrowserWindow({...canvas,title:a.name+' · 知交信使',transparent:true,backgroundColor:'#00000000',frame:false,hasShadow:false,resizable:false,alwaysOnTop:true,skipTaskbar:true,webPreferences:preferences});
+  const pet=new BrowserWindow({...canvas,title:a.name+' · 知交信使',transparent:true,backgroundColor:'#00000000',frame:false,hasShadow:false,resizable:false,alwaysOnTop:true,skipTaskbar:true,show:!ui.hidden,webPreferences:preferences});
   pets.set(a.id,pet);placements.set(pet,'left');pet.loadURL(url+'/?agent='+encodeURIComponent(a.id)+'&panel=left');
   let placementTimer;
   pet.on('move',()=>{clearTimeout(placementTimer);placementTimer=setTimeout(()=>{
@@ -54,7 +76,7 @@ async function syncVisitors(){
  try{
   for(const [id,entry] of visitors)if(entry.expiresAt<=Date.now()){entry.win.destroy();visitors.delete(id)}
   const response=await fetch(url+'/api/state',{signal:AbortSignal.timeout(5000)});if(!response.ok)return;
-  const state=await response.json();if(quitting)return;
+  const state=await response.json();if(quitting)return;updateInbox(state);
   const wanted=pickVisitors(state);const ids=new Set(wanted.map(v=>v.id));
   for(const [id,entry] of visitors)if(!ids.has(id)){entry.win.destroy();visitors.delete(id)}
   for(const visitor of wanted){
@@ -64,14 +86,14 @@ async function syncVisitors(){
    visitors.set(visitor.id,{win,expiresAt:visitor.expiresAt});
    win.webContents.setWindowOpenHandler(()=>({action:'deny'}));
    win.loadURL(url+'/?agent='+encodeURIComponent(visitor.hostId)+'&visit='+encodeURIComponent(visitor.id));
-   win.once('ready-to-show',()=>{if(!win.isDestroyed())win.showInactive()});
+   win.once('ready-to-show',()=>{if(!win.isDestroyed()&&!ui.hidden)win.showInactive()});
    win.on('close',e=>{if(!quitting){e.preventDefault();win.hide()}});
    win.on('closed',()=>visitors.delete(visitor.id));
    host.webContents.send('visitor-arrived',visitor.id);
   }
  }catch(e){console.error('同步桌面访客失败：'+e.message)}finally{visitorsBusy=false;}
 }
-function showAll(){if(setup)setup.show();else{for(const pet of pets.values())pet.show();for(const {win} of visitors.values())win.showInactive()}}
+function showAll(){ui.hidden=false;saveUI();if(setup)setup.show();else{for(const pet of pets.values())pet.showInactive();for(const {win} of visitors.values())win.showInactive()}refreshTray()}
 app.on('web-contents-created',(_event,contents)=>{contents.on('render-process-gone',(_event,details)=>{lifecycleLog('renderer-gone',details.reason);if(!quitting&&details.reason!=='clean-exit'&&!contents.isDestroyed())contents.reload()});contents.on('will-frame-navigate',event=>event.preventDefault());contents.setWindowOpenHandler(()=>({action:'deny'}));});
 if(!app.requestSingleInstanceLock()){app.quit();}else{
 app.on('second-instance',showAll);
@@ -82,7 +104,7 @@ app.whenReady().then(async()=>{
  try{await fetch(url+'/api/state')}catch{const runtimeLog=fs.openSync(path.join(logDir,'runtime.log'),'a',0o600);service=spawn(process.execPath,[path.join(__dirname,'runtime/index.mjs')],{env:{...process.env,ELECTRON_RUN_AS_NODE:'1',PATH:'/opt/homebrew/bin:/usr/local/bin:'+process.env.PATH},stdio:['ignore',runtimeLog,runtimeLog]});fs.closeSync(runtimeLog);service.on('exit',(code,signal)=>lifecycleLog('runtime-exit',JSON.stringify({code,signal})));}
  await ready();lifecycleLog('desktop-started',String(process.pid));
  ({desktopVisitors:pickVisitors}=await import('./shared/desktop-visitors.mjs'));
- const state=await (await fetch(url+'/api/state')).json();
+ const state=await (await fetch(url+'/api/state')).json();updateInbox(state);
  if(state.registrationComplete===false){
   setup=new BrowserWindow({width:1000,height:820,minWidth:760,minHeight:650,title:'知交信使 · 注册助理',backgroundColor:'#151719',webPreferences:preferences});
   setup.loadURL(url+'/?register=1');setup.webContents.setWindowOpenHandler(()=>({action:'deny'}));
@@ -90,15 +112,20 @@ app.whenReady().then(async()=>{
  }else createPets(state.agents);
  ipcMain.handle('open-visit-link',async(_event,value)=>{if(typeof value!=='string'||value.length>2000)throw Error('Invalid link');const target=new URL(value);if(target.protocol!=='https:'||target.username||target.password)throw Error('Only HTTPS links are supported');await shell.openExternal(target.href)});
  ipcMain.handle('finish-registration',async()=>{const current=await (await fetch(url+'/api/state')).json();if(!current.registrationComplete)throw Error('请先完成注册');createPets(current.agents);setup?.close()});
+ ipcMain.handle('desktop-status',()=>({...inbox,hidden:ui.hidden}));
+ ipcMain.on('desktop-hide',e=>{if([...pets.values(),...histories.values()].includes(BrowserWindow.fromWebContents(e.sender)))hideAll()});
+ ipcMain.on('desktop-read',(e,{agentId,lastId}={})=>{
+  const win=BrowserWindow.fromWebContents(e.sender);if(!win||!win.isVisible()||!win.isFocused()||!(pets.get(agentId)===win||histories.get(agentId)===win))return;
+  if(markConversationRead(desktopState,ui.seen,agentId,lastId)){saveUI();inbox=summarizeInbox(desktopState,ui.seen);refreshTray()}
+ });
  ipcMain.handle('panel-placement',e=>placements.get(BrowserWindow.fromWebContents(e.sender))||'left');
  ipcMain.on('open-history',(_e,id)=>openHistory(id));
  ipcMain.on('hide-history',e=>BrowserWindow.fromWebContents(e.sender)?.hide());
  ipcMain.on('pointer-through',(e,value)=>{const win=BrowserWindow.fromWebContents(e.sender);if([...pets.values(),...Array.from(visitors.values(),v=>v.win)].includes(win))win.setIgnoreMouseEvents(value===true,{forward:true})});
  visitorTimer=setInterval(()=>void syncVisitors(),1000);void syncVisitors();
- tray=new Tray(nativeImage.createEmpty());tray.setTitle('✳');tray.setToolTip('知交信使 · 我的助理');
- tray.setContextMenu(Menu.buildFromTemplate([{label:'显示所有助理',click:showAll},{label:'查看历史聊天',click:()=>openHistory()},{type:'separator'},{label:'退出知交信使',click:()=>app.quit()}]));
- app.on('activate',showAll);
- disposeRecovery=installDesktopRecovery({powerMonitor,screen,windows:()=>setup?[setup]:[...pets.values(),...Array.from(visitors.values(),v=>v.win)],isQuitting:()=>quitting,log:lifecycleLog});
+ tray=new Tray(nativeImage.createFromPath(path.join(__dirname,'assets/tray/idle.png')).resize({width:22,height:22}));refreshTray();
+ app.on('activate',()=>{if(!ui.hidden)showAll()});
+ disposeRecovery=installDesktopRecovery({powerMonitor,screen,windows:()=>recoveryWindows({hidden:ui.hidden,setup,pets:[...pets.values()],visitors:Array.from(visitors.values(),v=>v.win),histories:[...histories.values()]}),isQuitting:()=>quitting,log:lifecycleLog});
 }).catch(e=>{console.error(e);app.quit()});
 app.on('window-all-closed',()=>{});
 app.on('before-quit',()=>{lifecycleLog('before-quit');quitting=true;disposeRecovery?.();clearInterval(visitorTimer);service?.kill()});

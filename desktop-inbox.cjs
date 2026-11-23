@@ -8,11 +8,12 @@ function summarizeInbox(state,seen={}){
   const confirmations=(cloud?.messages||[]).filter(m=>['waiting_owner','drafting'].includes(m.status)).length;
   const interactions=(cloud?.interactions||[]).filter(i=>i.to===self&&['pending','failed','ready'].includes(i.status)).length;
   const visits=(cloud?.visits||state.visits||[]).filter(v=>v.to===self&&v.status==='pending').length;
+  const updates=(cloud?.updateInvitations||[]).filter(i=>i.to===self&&i.status==='pending').length;
   const requests=(cloud?.requests||[]).filter(r=>r.recipient===self&&r.status==='pending').length;
-  return {id:agent.id,name:agent.name,unread,confirmations,messages:Math.max(unread,confirmations),interactions,visits,plays:interactions+visits,requests};
+  return {id:agent.id,name:agent.name,unread,confirmations,messages:Math.max(unread,confirmations),interactions,visits,updates,plays:interactions+visits,requests};
  });
  const sum=key=>agents.reduce((n,a)=>n+a[key],0);
- return {agents,messages:sum('messages'),plays:sum('plays'),requests:sum('requests'),total:sum('messages')+sum('plays')+sum('requests')};
+ return {agents,messages:sum('messages'),plays:sum('plays'),requests:sum('requests'),updates:sum('updates'),total:sum('messages')+sum('plays')+sum('requests')+sum('updates')};
 }
 function markConversationRead(state,seen,id,lastId){
  const messages=conversation(state,id),next=messages.findIndex(m=>m.id===lastId),previous=messages.findIndex(m=>m.id===seen[id]);

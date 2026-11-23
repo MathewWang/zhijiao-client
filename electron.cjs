@@ -17,10 +17,10 @@ function refreshTray(){
  const signature=JSON.stringify([ui.hidden,inbox]);if(signature===traySignature)return;traySignature=signature;
  const image=nativeImage.createFromPath(path.join(__dirname,'assets/tray',inbox.total?'unread.png':'idle.png')).resize({width:22,height:22});
  tray.setImage(image);tray.setTitle(inbox.total?String(Math.min(inbox.total,99))+(inbox.total>99?'+':''):'');
- tray.setToolTip(`知交信使 · ${inbox.messages} 条消息 · ${inbox.plays} 个玩法待查收`);
+ tray.setToolTip(`知交信使 · ${inbox.messages} 条消息 · ${inbox.plays} 个玩法 · ${inbox.updates} 个升级邀请`);
  const items=[{label:'知交信使 · 后台运行中',enabled:false},{label:ui.hidden?'显示桌面人物':'隐藏桌面人物',click:()=>ui.hidden?showAll():hideAll()},{type:'separator'}];
  if(!inbox.total)items.push({label:'暂时没有新消息或待查收玩法',enabled:false});
- for(const a of inbox.agents){if(a.messages)items.push({label:`查看${a.name}的消息（${a.messages}）`,click:()=>openDesktop(a.id,'chat')});if(a.interactions)items.push({label:`查收${a.name}的玩法（${a.interactions}）`,click:()=>openDesktop(a.id,'interactions')});if(a.visits)items.push({label:`查看${a.name}的敲门（${a.visits}）`,click:()=>openDesktop(a.id,'visits')});if(a.requests)items.push({label:`查看${a.name}的好友申请（${a.requests}）`,click:()=>openDesktop(a.id,'friends')});}
+ for(const a of inbox.agents){if(a.messages)items.push({label:`查看${a.name}的消息（${a.messages}）`,click:()=>openDesktop(a.id,'chat')});if(a.interactions)items.push({label:`查收${a.name}的玩法（${a.interactions}）`,click:()=>openDesktop(a.id,'interactions')});if(a.visits)items.push({label:`查看${a.name}的敲门（${a.visits}）`,click:()=>openDesktop(a.id,'visits')});if(a.updates)items.push({label:`查看${a.name}的升级邀请（${a.updates}）`,click:()=>openDesktop(a.id,'updates')});if(a.requests)items.push({label:`查看${a.name}的好友申请（${a.requests}）`,click:()=>openDesktop(a.id,'friends')});}
  items.push({type:'separator'},{label:'打开聊天',click:()=>openDesktop()},{label:'查看历史聊天',click:()=>{showAll();openHistory()}},{type:'separator'},{label:'退出知交信使',click:()=>app.quit()});
  tray.setContextMenu(Menu.buildFromTemplate(items));
 }
@@ -112,6 +112,15 @@ app.whenReady().then(async()=>{
  }else createPets(state.agents);
  ipcMain.handle('open-visit-link',async(_event,value)=>{if(typeof value!=='string'||value.length>2000)throw Error('Invalid link');const target=new URL(value);if(target.protocol!=='https:'||target.username||target.password)throw Error('Only HTTPS links are supported');await shell.openExternal(target.href)});
  ipcMain.handle('finish-registration',async()=>{const current=await (await fetch(url+'/api/state')).json();if(!current.registrationComplete)throw Error('请先完成注册');createPets(current.agents);setup?.close()});
+ ipcMain.handle('approve-client-update',async(e,{id,confirm}={})=>{
+  const win=BrowserWindow.fromWebContents(e.sender);if(confirm!==true||!win?.isVisible()||!win.isFocused()||![...pets.values()].includes(win)||typeof id!=='string'||!/^[-a-zA-Z0-9]+$/.test(id))throw Error('请由主人在桌面确认升级');
+  if(!service||service.killed)throw Error('本机服务由其他进程启动，请先停止单独的 npm start，再重开桌面客户端后升级');
+  const response=await fetch(url+'/api/update-invitations/prepare',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({id,confirm:true})});const result=await response.json();if(!response.ok)throw Error(result.error);
+  if(result.file!==path.join(__dirname,'.data','update-jobs',id+'.json'))throw Error('升级任务路径无效');
+  const fd=fs.openSync(path.join(logDir,'client-update.log'),'a',0o600);
+  try{const env={...process.env,PATH:'/opt/homebrew/bin:/usr/local/bin:'+process.env.PATH};delete env.ELECTRON_RUN_AS_NODE;const updater=spawn('node',[path.join(__dirname,'scripts/update-approved.mjs'),result.file,String(process.pid)],{cwd:__dirname,env,detached:true,stdio:['ignore',fd,fd]});await new Promise((resolve,reject)=>{updater.once('spawn',resolve);updater.once('error',reject)});updater.unref();setTimeout(()=>app.quit(),300);return {started:true};}
+  catch(error){await fetch(url+'/api/update-invitations/launch-failed',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({id})});throw Error('更新器未启动，客户端保持运行，请手动检查日志');}finally{fs.closeSync(fd)}
+ });
  ipcMain.handle('desktop-status',()=>({...inbox,hidden:ui.hidden}));
  ipcMain.on('desktop-hide',e=>{if([...pets.values(),...histories.values()].includes(BrowserWindow.fromWebContents(e.sender)))hideAll()});
  ipcMain.on('desktop-read',(e,{agentId,lastId}={})=>{
@@ -119,6 +128,7 @@ app.whenReady().then(async()=>{
   if(markConversationRead(desktopState,ui.seen,agentId,lastId)){saveUI();inbox=summarizeInbox(desktopState,ui.seen);refreshTray()}
  });
  ipcMain.handle('panel-placement',e=>placements.get(BrowserWindow.fromWebContents(e.sender))||'left');
+ ipcMain.on('open-updates',(_e,id)=>openDesktop(id,'updates'));
  ipcMain.on('open-history',(_e,id)=>openHistory(id));
  ipcMain.on('hide-history',e=>BrowserWindow.fromWebContents(e.sender)?.hide());
  ipcMain.on('pointer-through',(e,value)=>{const win=BrowserWindow.fromWebContents(e.sender);if([...pets.values(),...Array.from(visitors.values(),v=>v.win)].includes(win))win.setIgnoreMouseEvents(value===true,{forward:true})});

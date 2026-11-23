@@ -1,9 +1,10 @@
+import type {UpdateInvitation} from './UpdateInvitations';
 import type {Interaction} from './Interactions';
 import {DoorOpen} from 'lucide-react';
 import {CompanionAvatar} from './CompanionAvatar';
 import React,{useState} from 'react';
 import {Visits,type Visit} from './Visits';
-export type CloudState={interactions?:Interaction[];registered:boolean;connected:boolean;deviceId?:string;agentId?:string;error?:string;directory:{id:string;name:string;online:boolean;interactionProtocol?:number;profile?:{name:string;publicBio:string;skin?:string}}[];friends:string[];requests:{id:string;sender:string;recipient:string;status:string}[];visits:Visit[];messages:{id:string;status:string;error?:string;result?:string;message:{sender:string;text:string;kind:string}}[]};
+export type CloudState={updateInvitations?:UpdateInvitation[];interactions?:Interaction[];registered:boolean;connected:boolean;deviceId?:string;agentId?:string;error?:string;directory:{id:string;name:string;online:boolean;interactionProtocol?:number;updateProtocol?:number;profile?:{name:string;publicBio:string;skin?:string}}[];friends:string[];requests:{id:string;sender:string;recipient:string;status:string}[];visits:Visit[];messages:{id:string;status:string;error?:string;result?:string;message:{sender:string;text:string;kind:string}}[]};
 type Props={cloud?:CloudState;agent:{id:string;name:string;ownerName:string;skin:string};act:(path:string,data:unknown)=>Promise<boolean>;disabled:boolean;visitsOnly?:boolean;mode?:'friends'|'settings';onVisit?:(id:string)=>void;onChooseFriends?:()=>void;visitTarget?:string;historyOpen?:boolean;onCloseHistory?:()=>void};
 export function CloudPanel({cloud,agent,act,disabled,visitsOnly=false,mode='friends',onVisit,onChooseFriends,visitTarget,historyOpen,onCloseHistory}:Props){
  const [relay,setRelay]=useState('https://agentmen.cn');const [deviceName,setDeviceName]=useState('我的电脑');const [invite,setInvite]=useState('');const [consent,setConsent]=useState(false);

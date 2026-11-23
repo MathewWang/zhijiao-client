@@ -5,10 +5,10 @@ import {normalizeAgent,normalizePublicProfile} from '../shared/agent-profile.mjs
 
 // Credentials stay on the loopback server. Renderers receive only this public snapshot.
 export class DesktopCloud {
- constructor({dir,getAgent,onChange=()=>{},onOwnerEvent,agentRunner}){
-  this.onOwnerEvent=onOwnerEvent;this.dir=dir;this.getAgent=getAgent;this.onChange=onChange;this.agentRunner=agentRunner;
+ constructor({dir,getAgent,onChange=()=>{},onOwnerEvent,agentRunner,isPaused=()=>false}){
+  this.isPaused=isPaused;this.onOwnerEvent=onOwnerEvent;this.dir=dir;this.getAgent=getAgent;this.onChange=onChange;this.agentRunner=agentRunner;
   mkdirSync(dir,{recursive:true,mode:0o700});this.path=join(dir,'config.json');this.lock=join(dir,'client.lock');
-  this.state={registered:false,connected:false,directory:[],friends:[],requests:[],visits:[],interactions:[],messages:[]};
+  this.state={registered:false,connected:false,directory:[],friends:[],requests:[],visits:[],interactions:[],updateInvitations:[],messages:[]};
   this.abort=new AbortController();this.closed=false;
   if(existsSync(this.path)){
    const c=JSON.parse(readFileSync(this.path,'utf8'));
@@ -61,9 +61,9 @@ export class DesktopCloud {
    this.config.agent=normalizeAgent({...agent,publishProfile:true});
    const card=JSON.stringify(this.profile(agent));
    if(card!==this.profileJSON){await this.client.api('/v1/profile',{profile:JSON.parse(card),publishProfile:true});this.profileJSON=card;this.save();}
-   const data=await this.client.api('/v1/sync',{online:agent.enabled,interactionProtocol:2});
+   const data=await this.client.api('/v1/sync',{online:agent.enabled,interactionProtocol:2,updateProtocol:1});
    this.publish({...data,connected:true,error:''});
-   if(agent.enabled&&!this.processing){
+   if(agent.enabled&&!this.processing&&!this.isPaused()){
     this.processing=this.client.tick(this.abort.signal).catch(e=>this.publish({error:e.message})).finally(()=>{this.processing=null;if(!this.closed)this.refreshMessages();});
    }
    this.refreshMessages();

@@ -1,3 +1,4 @@
+import {pinOfficialUpdate,saveUpdateJob,flushUpdateReceipts} from './client-updater.mjs';
 import {InteractionRuntime,PLAY_CATALOG,wrapPresentation} from './interaction-runtime.mjs';
 import {normalizePlan} from '../shared/interactions.mjs';
 import {fetchRelease,notifyRelease} from './updates.mjs';
@@ -32,11 +33,12 @@ for(const m of state.messages)if(m.cloudEventKey&&m.cloudStatus==='done'&&m.clou
 for(const m of state.messages)if(m.cloudEventKey&&m.cloudStatus==='done'&&(m.text.startsWith('此前已回复')||m.text.startsWith('已把你确认的答复发给'))&&!m.channel){m.channel='agent-detail';legacyReportsChanged=true;}
 if(legacyReportsChanged)save();
 const jobs=new Map();const clients=new Set();let engines=await detect();
-let cloud;let interactions;
+let cloud;let interactions;let updatePreparing=false;
+const updateJobsDir=join(root,'.data','update-jobs');
 const updateInfo={currentVersion:JSON.parse(readFileSync(join(root,'package.json'),'utf8')).version,latestVersion:null,lastCheckedAt:null,error:''};
 let checkingUpdates=false;
 async function checkUpdates(){if(checkingUpdates)return;checkingUpdates=true;try{const release=await fetchRelease();updateInfo.latestVersion=release.version;updateInfo.lastCheckedAt=Date.now();updateInfo.error='';if(notifyRelease(state,release,updateInfo.currentVersion,addMessage))persist();else notify();}catch{updateInfo.error='暂时无法检查更新，稍后会自动重试';notify();}finally{checkingUpdates=false;}}
-const snapshot=()=>{if(expireVisits(state.visits))save();return ({...state,updates:updateInfo,playTemplates:interactions?.templates()||[],interactionEffects:interactions?.snapshot()||[],playCatalog:PLAY_CATALOG,cloud:cloud?.snapshot(),engines,presets,directory:state.agents.filter(a=>a.public!==false).map(publicCard),busy:[...jobs.keys()]})};
+const snapshot=()=>{if(expireVisits(state.visits))save();return ({...state,updates:updateInfo,updatePreparing,playTemplates:interactions?.templates()||[],interactionEffects:interactions?.snapshot()||[],playCatalog:PLAY_CATALOG,cloud:cloud?.snapshot(),engines,presets,directory:state.agents.filter(a=>a.public!==false).map(publicCard),busy:[...jobs.keys()]})};
 function notify(){for(const c of clients)c.write(`data: ${JSON.stringify(snapshot())}\n\n`)}
 function persist(){save();notify()}
 function addMessage(agentId,role,text,extra={}){const m={id:randomUUID(),agentId,role,text,createdAt:Date.now(),...extra};state.messages.push(m);return m}
@@ -54,6 +56,7 @@ function processInvites(id){
 }
 function invite(from,to){const result=requestFriend(state,from,to);persist();return result;}
 async function execute(a,message,kind='chat',source='主人',incoming,pendingMessage){
+ if(updatePreparing)throw Error('客户端正在准备升级，请稍后再试');
  if(jobs.has(a.id))throw Error('这个助理正在处理事情，请稍后再试');
  const controller=new AbortController();jobs.set(a.id,controller);
  const history=state.messages.filter(m=>m.agentId===a.id && (source==='主人'?m.channel!=='friend':m.channel==='friend'&&m.peerId===incoming?.peerId)).map(m=>({role:m.role,text:m.text}));
@@ -99,11 +102,18 @@ const port=Number(process.env.PORT||4317);const origin=`http://127.0.0.1:${port}
 const vite=process.env.COMPANION_DEV!=='1'&&existsSync(join(root,'dist/index.html'))?null:await (await import('vite')).createServer({root,server:{middlewareMode:true,host:'127.0.0.1'},appType:'spa'});
 async function body(req){let str='';for await(const c of req){str+=c;if(Buffer.byteLength(str)>262144)throw Error('内容过长')}return JSON.parse(str||'{}')}
 function send(res,code,data){res.writeHead(code,{'Content-Type':'application/json'});res.end(JSON.stringify(data))}
-cloud=new DesktopCloud({dir:resolve(process.env.CLIENT_DATA_DIR||(process.env.COMPANION_DATA_DIR?join(dataDir,'cloud-client'):join(root,'.data/client'))),getAgent:id=>state.agents.find(a=>a.id===id),onChange:()=>{notify();if(interactions){interactions.reports();void interactions.flush();}},onOwnerEvent:({key,agentId,text,messageId,status,ownerConfirmed,role='assistant',reportKind})=>{if(!state.agents.some(a=>a.id===agentId))return false;if(!state.messages.some(m=>m.cloudEventKey===key)){addMessage(agentId,role,text,{status:'done',...(reportKind==='receipt'?{channel:'agent-detail'}:{}),cloudReportKind:reportKind,cloudEventKey:key,cloudMessageId:messageId,cloudStatus:status,cloudOwnerConfirmed:ownerConfirmed});persist();}return true;}});
+cloud=new DesktopCloud({dir:resolve(process.env.CLIENT_DATA_DIR||(process.env.COMPANION_DATA_DIR?join(dataDir,'cloud-client'):join(root,'.data/client'))),getAgent:id=>state.agents.find(a=>a.id===id),isPaused:()=>updatePreparing,onChange:()=>{reportUpdateInvitations();notify();if(interactions){interactions.reports();void interactions.flush();}},onOwnerEvent:({key,agentId,text,messageId,status,ownerConfirmed,role='assistant',reportKind})=>{if(!state.agents.some(a=>a.id===agentId))return false;if(!state.messages.some(m=>m.cloudEventKey===key)){addMessage(agentId,role,text,{status:'done',...(reportKind==='receipt'?{channel:'agent-detail'}:{}),cloudReportKind:reportKind,cloudEventKey:key,cloudMessageId:messageId,cloudStatus:status,cloudOwnerConfirmed:ownerConfirmed});persist();}return true;}});
+function reportUpdateInvitations(){
+ const c=cloud?.snapshot(),a=state.agents.find(a=>a.id===c?.agentId);if(!a)return;
+ const labels={pending:'邀请你更新客户端，等待你同意',accepted:'已获主人同意，正在更新',completed:'已更新并启动客户端',failed:'更新未完成，请由主人检查',declined:'主人暂未同意升级',cancelled:'邀请已撤回',expired:'邀请已过期'};
+ let changed=false;for(const i of c.updateInvitations||[]){const key=i.id+':'+i.status;if(state.messages.some(m=>m.updateInvitationEvent===key))continue;const peer=c.directory.find(d=>d.id===(i.to===c.deviceId?i.from:i.to));addMessage(a.id,'assistant',`${peer?.profile?.name||peer?.name||'好友'}的升级邀请 · ${i.targetVersion}：${labels[i.status]||i.status}${i.status==='pending'&&i.note?'\n对方留言：'+i.note:''}`,{updateInvitationId:i.id,updateInvitationEvent:key});changed=true}if(changed)save();
+}
+function assertUpdateIdle(){if(jobs.size||interactions.jobs.size||cloud.processing||cloud.state.messages.some(m=>m.status==='drafting')||interactions.snapshot().some(e=>['generating','playing'].includes(e.status))||cloud.state.interactions?.some(i=>i.to===cloud.config?.id&&['playing','accepted'].includes(i.status))||cloud.state.visits?.some(v=>v.status==='active'))throw Error('有任务、播放或串门正在进行，请结束后再升级')}
 const cloudTimer=setInterval(()=>void cloud.poll(),5000);cloudTimer.unref();
 interactions=new InteractionRuntime({dbPath:join(dataDir,'interactions.sqlite'),cloud,getAgent:()=>state.agents.find(a=>a.id===cloud.config?.localAgentId),dataDir,onChange:notify,onReport:({key,text,interactionId})=>{const a=state.agents.find(a=>a.id===cloud.config?.localAgentId);if(!a)return false;if(!state.messages.some(m=>m.interactionEventKey===key)){addMessage(a.id,'assistant',text,{interactionId,interactionEventKey:key});persist();}return true;}});
 void cloud.start();
 const updateStartup=setTimeout(()=>void checkUpdates(),10000);updateStartup.unref();
+const updateReceiptTimer=setInterval(()=>void flushUpdateReceipts(updateJobsDir),30000);updateReceiptTimer.unref();void flushUpdateReceipts(updateJobsDir);
 const updateTimer=setInterval(()=>void checkUpdates(),30*60000);updateTimer.unref();
 const server=http.createServer(async(req,res)=>{
  const url=new URL(req.url,origin);
@@ -121,6 +131,16 @@ const server=http.createServer(async(req,res)=>{
  return send(res,200,{html:interactions.artifact(id,{sender:asset(sender?.profile?.skin),recipient:asset(recipient?.skin)})});}
  if(req.method!=='POST')return send(res,405,{error:'不支持的方法'});
  const b=await body(req);const p=url.pathname;
+ if(updatePreparing&&!p.startsWith('/api/update-invitations/'))throw Error('客户端正在准备升级，请稍后再试');
+ if(p==='/api/update-invitations/send'){if(!cloud.client)throw Error('请先连接云端');const release=await fetchRelease();const item=await cloud.client.api('/v1/update-invitations',{to:b.to,key:b.key,targetVersion:release.version,note:b.note});await cloud.poll();return send(res,200,item)}
+ if(p==='/api/update-invitations/action'){if(!['decline','cancel'].includes(b.action))throw Error('同意更新必须由本机桌面确认');const result=await cloud.client.api('/v1/update-invitations/action',{id:b.id,action:b.action});await cloud.poll();return send(res,200,result)}
+ if(p==='/api/update-invitations/prepare'){
+  if(b.confirm!==true||updatePreparing)throw Error('请由主人明确确认本次升级');if(cloud.config?.relay!=='https://agentmen.cn')throw Error('自动升级目前仅支持官方知交信使服务');assertUpdateIdle();updatePreparing=true;notify();
+  try{await cloud.poll();assertUpdateIdle();const item=cloud.state.updateInvitations?.find(i=>i.id===b.id&&i.to===cloud.config.id&&i.status==='pending');if(!item)throw Error('升级邀请已变化，请刷新后再决定');const release=await fetchRelease();if(release.version!==item.targetVersion)throw Error('邀请版本不是当前官方发布版本，请让好友重新邀请');
+   const pinned=pinOfficialUpdate(root,item.targetVersion,updateInfo.currentVersion);assertUpdateIdle();const job={id:item.id,targetVersion:item.targetVersion,...pinned,root,configPath:cloud.path,runtimePid:process.pid,approved:true,status:'approved',createdAt:Date.now()};const file=join(updateJobsDir,item.id+'.json');saveUpdateJob(file,job);await cloud.client.api('/v1/update-invitations/action',{id:item.id,action:'accept'});await cloud.poll();return send(res,200,{file});
+  }catch(e){updatePreparing=false;notify();throw e}
+ }
+ if(p==='/api/update-invitations/launch-failed'){updatePreparing=false;await cloud.client.api('/v1/update-invitations/action',{id:b.id,action:'fail',detail:'更新器启动失败，客户端未退出'});await cloud.poll();return send(res,200,{ok:true})}
  if(p==='/api/updates/check'){await checkUpdates();return send(res,200,updateInfo);}
  if(p==='/api/interactions/templates-save')return send(res,200,interactions.saveTemplate(b));
  if(p==='/api/interactions/templates-delete')return send(res,200,interactions.deleteTemplate(b.id));
@@ -207,6 +227,6 @@ const server=http.createServer(async(req,res)=>{
 });
 server.listen(port,'127.0.0.1',()=>{console.log(`Companion ready: ${origin}`);for(const a of state.agents){processInvites(a.id);drain(a.id)}});
 setInterval(()=>{for(const c of clients)c.write(': keepalive\n\n')},20000).unref();
-for(const sig of ['SIGTERM','SIGINT'])process.on(sig,async()=>{clearInterval(cloudTimer);clearInterval(updateTimer);clearTimeout(updateStartup);for(const c of jobs.values())c.abort();server.close();await interactions.close();await cloud.close();db.close();process.exit()});
+for(const sig of ['SIGTERM','SIGINT'])process.on(sig,async()=>{clearInterval(cloudTimer);clearInterval(updateTimer);clearInterval(updateReceiptTimer);clearTimeout(updateStartup);for(const c of jobs.values())c.abort();server.close();await interactions.close();await cloud.close();db.close();process.exit()});
 
 const visitExpiry=setInterval(()=>{if(expireVisits(state.visits))persist()},5000);visitExpiry.unref();

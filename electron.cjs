@@ -19,6 +19,7 @@ function refreshTray(){
  tray.setImage(image);tray.setTitle(inbox.total?String(Math.min(inbox.total,99))+(inbox.total>99?'+':''):'');
  tray.setToolTip(`知交信使 · ${inbox.messages} 条消息 · ${inbox.plays} 个玩法 · ${inbox.updates} 个升级邀请`);
  const items=[{label:'知交信使 · 后台运行中',enabled:false},{label:ui.hidden?'显示桌面人物':'隐藏桌面人物',click:()=>ui.hidden?showAll():hideAll()},{type:'separator'}];
+ items.push({label:'打开收件箱',click:()=>openDesktop(inbox.agents.find(a=>a.messages+a.plays+a.requests+a.updates>0)?.id,'inbox')});
  if(!inbox.total)items.push({label:'暂时没有新消息或待查收玩法',enabled:false});
  for(const a of inbox.agents){if(a.messages)items.push({label:`查看${a.name}的消息（${a.messages}）`,click:()=>openDesktop(a.id,'chat')});if(a.interactions)items.push({label:`查收${a.name}的玩法（${a.interactions}）`,click:()=>openDesktop(a.id,'interactions')});if(a.visits)items.push({label:`查看${a.name}的敲门（${a.visits}）`,click:()=>openDesktop(a.id,'visits')});if(a.updates)items.push({label:`查看${a.name}的升级邀请（${a.updates}）`,click:()=>openDesktop(a.id,'updates')});if(a.requests)items.push({label:`查看${a.name}的好友申请（${a.requests}）`,click:()=>openDesktop(a.id,'friends')});}
  items.push({type:'separator'},{label:'打开聊天',click:()=>openDesktop()},{label:'查看历史聊天',click:()=>{showAll();openHistory()}},{type:'separator'},{label:'退出知交信使',click:()=>app.quit()});

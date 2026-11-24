@@ -10,7 +10,7 @@ test('single-agent registration needs explicit consents, verifies once and persi
  const dir=mkdtempSync(join(tmpdir(),'single-registration-'));const bin=join(dir,'bin');mkdirSync(bin);
  const marker=join(dir,'calls');
  // Isolated fake CLI: this test never contacts a model or uses credentials.
- writeFileSync(join(bin,'codex'),`#!${process.execPath}\nimport {appendFileSync} from 'node:fs';\nif(process.argv.includes('--version'))console.log('test-codex');else{appendFileSync(${JSON.stringify(marker)},'call\\n');console.log(JSON.stringify({type:'item.completed',item:{type:'agent_message',text:'connected'}}));}\n`,{mode:0o755});
+ writeFileSync(join(bin,'codex'),`#!${process.execPath}\nimport {appendFileSync} from 'node:fs';\nif(process.argv.includes('--version'))console.log('test-codex');else if(process.argv[2]==='mcp')console.log('[]');else{appendFileSync(${JSON.stringify(marker)},'call\\n');console.log(JSON.stringify({type:'item.completed',item:{type:'agent_message',text:'connected'}}));}\n`,{mode:0o755});
  writeFileSync(join(bin,'traecli'),readFileSync(join(bin,'codex'),'utf8').replace("else{appendFileSync", "else if(process.argv.includes('broken')){process.exit(1)}else{appendFileSync"),{mode:0o755});
  const socket=net.createServer();await new Promise(r=>socket.listen(0,'127.0.0.1',r));const port=socket.address().port;await new Promise(r=>socket.close(r));
  const child=spawn(process.execPath,['runtime/index.mjs'],{env:{...process.env,PATH:bin,PORT:String(port),COMPANION_DATA_DIR:join(dir,'data')},stdio:['ignore','pipe','pipe']});

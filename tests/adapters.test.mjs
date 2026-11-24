@@ -12,7 +12,7 @@ test('engine allowlist, no shell command interpolation, OpenCode tools denied',(
  assert.deepEqual(adapters.opencode.args('a; echo bad').slice(-2),['--model','a; echo bad']);
 });
 
-test('TRAE uses structured final replies and read-only ephemeral calls',()=>{assert.equal(parseEvent('trae',{type:'item.completed',item:{type:'agent_message',text:'hello'}}),'hello');assert.equal(parseEvent('trae',{type:'item.completed',item:{type:'reasoning',text:'private'}}),'');assert.ok(adapters.trae.args().includes('read-only'));assert.ok(adapters.trae.args().includes('--ignore-user-config'));});
+test('TRAE uses structured final replies and read-only ephemeral calls',()=>{assert.equal(parseEvent('trae',{type:'item.completed',item:{type:'agent_message',text:'hello'}}),'hello');assert.equal(parseEvent('trae',{type:'item.completed',item:{type:'reasoning',text:'private'}}),'');assert.ok(adapters.trae.args().includes('read-only'));assert.ok(!adapters.trae.args().includes('--ignore-user-config'));});
 
 test('Antigravity accepts only a successful terminal result and denies tools per session',()=>{
  const args=adapters.antigravity.args('model; echo bad');

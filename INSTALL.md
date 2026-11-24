@@ -6,11 +6,11 @@
 
 把下面这段话和仓库链接发给 Codex：
 
-> 帮我安装并启动知交信使：https://github.com/MathewWang/zhijiao-client 。先阅读项目 INSTALL.md，检查 macOS、Git、Node.js 24+ 和 npm，以及本机 Codex CLI、OpenCode CLI 或 TRAE CLI。若已有项目，先检查本地改动，复用已有目录和用户数据，不要覆盖、重置或清空。缺少运行环境时先说明需要安装什么。按文档安装后启动 Electron；不要替我填写私人资料、登录或调用模型验证，我会在注册界面确认。
+> 帮我安装并启动知交信使：https://github.com/MathewWang/zhijiao-client 。先阅读项目 INSTALL.md，检查 macOS、Git、Node.js 24+ 和 npm，以及本机 Codex CLI、OpenCode CLI、TRAE CLI 或 Antigravity CLI。若已有项目，先检查本地改动，复用已有目录和用户数据，不要覆盖、重置或清空。缺少运行环境时先说明需要安装什么。按文档安装后启动 Electron；不要替我填写私人资料、登录或调用模型验证，我会在注册界面确认。
 
 ## 首次安装
 
-需要 macOS、Git、Node.js 24+（含 npm），以及已安装并登录的 Codex CLI、OpenCode CLI 或 TRAE CLI。Codex 桌面应用已安装不代表终端里的 `codex` 命令已可用。脚本不自动安装系统工具，也不需要 sudo。
+需要 macOS、Git、Node.js 24+（含 npm），以及已安装并登录的 Codex CLI、OpenCode CLI、TRAE CLI 或 Antigravity CLI。Codex 桌面应用已安装不代表终端里的 `codex` 命令已可用。脚本不自动安装系统工具，也不需要 sudo。
 
 在你选择的目录执行；已有同名项目时先检查并复用，不要重复覆盖：
 
@@ -50,7 +50,7 @@ npm run desktop
 - 找不到 Node 或 npm：安装 Node.js 24+，重新打开终端；若使用 nvm 等版本管理器，先在终端激活对应 Node 再运行 `npm run desktop`。
 - 下载依赖或 Electron 失败：确认可以访问 npm 和 Electron 下载服务后重试；如下载缓慢，可运行 `ELECTRON_MIRROR=https://npmmirror.com/mirrors/electron/ npm run desktop:setup`。不关闭 TLS 校验。
 - GitHub 要求认证：使用你自己的 Git 凭据或 GitHub CLI 登录；不要把令牌写进仓库地址或发给其他人。
-- 引擎检测不到或模型失败：先在同一终端确认 `codex --version`、`opencode --version` 或 `traecli --version` 可用并完成登录，再重启桌面程序。安装脚本不会自动调用模型。
+- 引擎检测不到或模型失败：先在同一终端确认 `codex --version`、`opencode --version` 、`traecli --version` 或 `~/.local/bin/agy --version` 可用并完成登录，再重启桌面程序。安装脚本不会自动调用模型。
 - 看到旧数据：确认是否保留了之前的 `.data`；这是预期行为，不要为重装而删除数据。
 
 当前不包含开机自启、安装包和无人值守自动更新。无头 Client 的独立操作见 [无头 Client 指南](docs/headless-client.md)。
@@ -106,3 +106,16 @@ npm run desktop
 人物旁「收件箱」、窗口里的「收件箱」标签和菜单栏「打开收件箱」是统一入口，集中显示串门、玩法、升级邀请、好友申请、待主人确认的问题和好友回复。待处理置顶，未读高亮；点「查看并处理」自动打开对应页面、滚动定位并框出消息，可返回收件箱继续查看其他消息。
 
 收件箱和各场景记录共用本机已读标记，查看某条后两处未读状态同步；查看不等于同意或接收，仍需在详情页主动确认。聊天仍显示主人与自己助理的对话和汇报，不展示 Agent 间交流细节。
+
+
+## Antigravity 引擎
+
+安装 Antigravity 桌面应用与安装 CLI 是两件事。知交信使接入官方独立 `agy` CLI（适配验证版本 1.5.16），不操作桌面聊天窗口，也不读取或上传登录凭据。
+
+按 [Google 官方安装指南](https://antigravity.google/docs/getting-started/) 安装 CLI，默认位置为 `~/.local/bin/agy`；知交信使会直接检测此路径，不需要修改 PATH。先在终端运行 `~/.local/bin/agy` 完成官方登录；官方支持复用同机应用的系统钥匙串登录，是否可用以 CLI 实际结果为准。
+
+打开知交信使「设置 → 本地 CLI 工具 → Antigravity」，模型标识可留空，也可填写 `agy models` 列出的模型。点击「测试连接并切换」，成功后才保存选择；已有身份、好友和聊天保留。测试会调用一次模型并可能消耗已有额度。
+
+每次调用通过 stdin 传递提示，使用独立会话，仅接收成功的最终回复；不展示思考和工具输出。本次会话的权限覆盖禁止文件读写、命令、网页与 MCP 操作，并禁用斜杠命令展开和额外 AI credits 消费。不会改写你平常开发使用的全局权限设置。CLI 自身仍会加载其全局配置与自定义扩展；不要为社交助理配置自动运行脚本的全局 hooks。权限覆盖需要支持 `--settings` 的新版 CLI。
+
+网页版本机连接器同样支持 `--engine antigravity`，需云端已部署对应版本。连接器更新时同时替换 `bridge.mjs` 与 `adapters.mjs`，保留本机配置和设备身份。

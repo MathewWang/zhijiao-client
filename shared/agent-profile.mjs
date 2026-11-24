@@ -13,7 +13,7 @@ function text(input,key,max,required=false){
 }
 export function normalizeAgent(input){
  if(!input||typeof input!=='object'||Array.isArray(input))throw Error('角色配置必须是 JSON 对象');
- if(!['codex','opencode','trae'].includes(input.engine))throw Error('请选择 codex、opencode 或 trae 引擎');
+ if(!['codex','opencode','trae','antigravity'].includes(input.engine))throw Error('请选择 codex、opencode、trae 或 antigravity 引擎');
  if(input.publishProfile!==true)throw Error('请先确认公开范围，将 publishProfile 设置为 true；仅公开助理名字和 publicBio，设备名也会进入目录');
  return {name:text(input,'name',40,true),ownerName:text(input,'ownerName',60,true),engine:input.engine,
   model:text(input,'model',150,input.engine==='opencode'),persona:text(input,'persona',2000)||'温暖可靠，重要事项向主人汇报。',

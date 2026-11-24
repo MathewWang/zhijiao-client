@@ -190,7 +190,7 @@ const server=http.createServer(async(req,res)=>{
  const a=agentBy(b.id);
  if(jobs.has(a.id)||interactions.jobs.size)throw Error('助理正在忙，请等待当前任务结束后切换');
  if(b.verifyConnection!==true)throw Error('请先同意测试模型连接');
- if(!['codex','opencode','trae'].includes(b.engine))throw Error('请选择可用引擎');
+ if(!['codex','opencode','trae','antigravity'].includes(b.engine))throw Error('请选择可用引擎');
  const model=typeof b.model==='string'?b.model.trim():'';
  if(model.length>150||(b.engine==='opencode'&&!model))throw Error('请检查模型标识');
  const controller=new AbortController();jobs.set(a.id,controller);notify();

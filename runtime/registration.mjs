@@ -4,7 +4,7 @@ export const presets=characters;
 export function makeAgent(input){
  if(!input||typeof input!=='object'||Array.isArray(input))throw Error('请填写助理资料');
  const str=(key,max,required=false)=>{const value=typeof input[key]==='string'?input[key].trim():'';if((required&&!value)||value.length>max)throw Error(`请检查${{name:'助理名字',ownerName:'主人称呼',model:'模型',publicBio:'公开简介',shareableProfile:'可分享近况',persona:'性格与职责'}[key]||key}`);return value};
- if(!['codex','opencode','trae'].includes(input.engine))throw Error('请选择可用引擎');
+ if(!['codex','opencode','trae','antigravity'].includes(input.engine))throw Error('请选择可用引擎');
  if(!presets.some(p=>p.id===input.skin))throw Error('请选择系统预制形象');
  if(typeof input.autoAcceptFriends!=='boolean')throw Error('请选择好友申请处理方式');
  if(input.publishProfile!==true)throw Error('请确认公开名片范围');

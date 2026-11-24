@@ -12,7 +12,7 @@ async function main(){
  mkdirSync(dir,{recursive:true,mode:0o700});chmodSync(dir,0o700);
  if(command==='pair'){
   if(existsSync(file)&&!args.includes('--replace'))throw Error('本机已有配对。确需替换时运行 pair --replace；不会修改桌面客户端身份');
-  const engine=option('engine','codex'),model=option('model');if(!adapters[engine])throw Error('支持 codex、trae、opencode');if(engine==='opencode'&&!model)throw Error('OpenCode 需要 --model 供应商/模型');
+  const engine=option('engine','codex'),model=option('model');if(!adapters[engine])throw Error('支持 codex、trae、opencode、antigravity');if(engine==='opencode'&&!model)throw Error('OpenCode 需要 --model 供应商/模型');
   const rl=createInterface({input:process.stdin,output:process.stdout});let code;try{code=await rl.question('输入网页设置里生成的配对码：')}finally{rl.close()}
   const server=serverURL(option('server','https://agentmen.cn'));
   const result=await api({server},'claim',{code,engine});const temp=file+'.tmp';writeFileSync(temp,JSON.stringify({server,engine,model,...result},null,2),{mode:0o600});renameSync(temp,file);chmodSync(file,0o600);
@@ -22,7 +22,7 @@ async function main(){
   if(!existsSync(file))throw Error('请先运行 pair 完成网页配对');
   const fd=openSync(join(dir,'bridge.log'),'a',0o600);const child=spawn(process.execPath,[fileURLToPath(import.meta.url),'run'],{env:process.env,detached:true,stdio:['ignore',fd,fd]});child.on('error',e=>{console.error('启动失败：'+e.message);process.exitCode=1});child.unref();closeSync(fd);console.log('连接器已独立后台启动，可关闭终端；日志在 '+join(dir,'bridge.log')+'。网页设置可查看状态或解绑。');return;
  }
- if(command!=='run'){console.log('知交信使 · 网页连接器（无需 Electron / npm 依赖）\n  node bridge.mjs pair --engine codex|trae [--server https://agentmen.cn]\n  node bridge.mjs start（后台）或 run（前台）\n仅处理你在网页明确发起的聊天和效果制作，不提供文件或 Shell 远程控制。');return}
+ if(command!=='run'){console.log('知交信使 · 网页连接器（无需 Electron / npm 依赖）\n  node bridge.mjs pair --engine codex|trae|antigravity [--server https://agentmen.cn]\n  node bridge.mjs start（后台）或 run（前台）\n仅处理你在网页明确发起的聊天和效果制作，不提供文件或 Shell 远程控制。');return}
  const config=JSON.parse(readFileSync(file,'utf8'));config.server=serverURL(config.server);if(!adapters[config.engine])throw Error('本地引擎配置无效');
  // One connector per private directory. A dead prior PID can be reclaimed after a crash.
  const lock=join(dir,'run.lock');let fd;

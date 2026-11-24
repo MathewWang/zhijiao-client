@@ -128,3 +128,14 @@ Codex / TRAE 默认沿用本机 CLI 的供应商、base_url、模型和登录配
 每次运行先执行只读的 `mcp list --json` 配置查询，然后为本次调用关闭已配置的 MCP、hooks、插件、应用集成、Shell 与网络搜索，保留只读沙箱和禁止审批策略。全局开发配置不会被改写；配置查询失败时停止，不调用模型。当前安全覆盖支持由字母、数字、下划线和连字符组成的 MCP 名称；其它名称会停止调用并提示更新或检查 CLI，而非放行扩展。
 
 网页版连接器需要同时更新 `bridge.mjs` 和 `adapters.mjs` 并重启，已有配对配置保留。已启动的桌面客户端需要退出并重新启动。模型错误中的常见 `sk-` 密钥和 Bearer 令牌会隐藏；反馈问题时仍请自行检查日志并去掉私人信息。
+
+
+## Electron 安全更新（0.6.7）
+
+桌面运行时由 Electron 40.10.6 升至精确锁定的 45.4.1。2026-11-24 使用完整依赖执行 `npm audit`，结果为 0 项已知漏洞；这仅代表当时的依赖审计结果，不表示未来不会出现新公告。未发现或验证真实拦截事件。
+
+升级方式仍是退出客户端后运行 `npm run desktop:update`，再运行 `npm run desktop`；需要联网下载新版运行时，无需重新注册或更改 CLI 登录。
+
+已验证完整回归和构建、真实运行时的预加载 IPC、菜单栏模式、人物隐藏/恢复、沙箱脚本、弹窗拒绝、外部请求阻止，以及 Electron Node 子进程的内存 SQLite。原生验证可在退出真实客户端并完成构建后运行 `npm run desktop:smoke`；测试使用临时身份、临时数据和本机模拟服务，不调用模型，也不连接云端。4317 端口正在使用时会停止，不替换现有服务。Windows/Linux 与旧版 macOS 未实机验证。
+
+参考：[Electron 45.4.1 发布记录](https://github.com/electron/electron/releases/tag/v45.4.1)、[证书安全公告](https://github.com/electron/electron/security/advisories/GHSA-jr5w-w6x2-84p9)、[跨版本变更](https://www.electronjs.org/docs/latest/breaking-changes)。

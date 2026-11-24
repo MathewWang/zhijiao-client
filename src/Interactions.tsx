@@ -1,10 +1,11 @@
+import {RecordFeed,type RecordItem} from './RecordFeed';
+import {recordStamp} from '../shared/record-inbox.mjs';
 import {PlayComposer} from './PlayComposer';
 import React,{useEffect,useRef,useState} from 'react';
 import {Flower2,Sparkles,X,Play,WandSparkles} from 'lucide-react';
-import {CompanionAvatar} from './CompanionAvatar';
 import type {CloudState} from './CloudPanel';
 import './interactions.css';
-export type Interaction={id:string;from:string;to:string;status:string;attempt:number;expiresAt:number;reply?:string;plan:{protocol:string;version:number;intent:{kind:string;title?:string;message:string;brief:string};presentation:{durationSeconds:number};artifact?:{html:string;sha256:string}}};
+export type Interaction={id:string;from:string;to:string;status:string;attempt:number;expiresAt:number;createdAt?:number;endedAt?:number;acceptedAt?:number;reply?:string;plan:{protocol:string;version:number;intent:{kind:string;title?:string;message:string;brief:string};presentation:{durationSeconds:number};artifact?:{html:string;sha256:string}}};
 export type PlayTemplate={id:string;title:string;icon:string;brief:string;message:string};
 export type Effect={id:string;attempt:number;status:string;error?:string};
 type Screen={id:string;html:string;duration:number;preview?:boolean;repair?:boolean};
@@ -46,22 +47,19 @@ export function Interactions({cloud,effects,initialKind,initialTemplate,act,disa
  {plan&&<div className="interaction-plan"><strong>效果已制作</strong><p>{plan.intent.message}</p><small>{previewed?'已打开预览，请确认效果满意后发送。':'先预览效果，再确认发送。'}</small><button type="button" onClick={resetPlan} disabled={working}>重新制作</button><details className="play-extra"><summary>改一下效果</summary><textarea aria-label="效果修改要求" maxLength={1000} value={revision} onChange={e=>setRevision(e.target.value)} placeholder="例如：离开时回头招手，动作慢一点" disabled={working}/><button type="button" disabled={working||!revision.trim()} onClick={()=>void draft(true)}>按描述修改</button></details></div>}
  </PlayComposer>}
  {error&&<p role="alert" className="lite-error">{error}</p>}
- {historyOpen&&<><div className="compact-row"><strong>往来记录</strong><button type="button" className="secondary-action" onClick={onCloseHistory}>返回</button></div>
- {!items.length&&<p className="lite-hint">收到的心意和发送结果会留在这里，也会在聊天中提醒你。</p>}
- {items.map(i=>{const incoming=i.to===self,prepared=i.plan.version===2,peer=cloud?.directory.find(p=>p.id===(incoming?i.from:i.to)),local=effects.find(e=>e.id===i.id&&e.attempt===i.attempt),generating=local?.status==='generating',finished=local?.status==='completed';return <article className="interaction-card" key={i.id}>
- <header><CompanionAvatar skin={peer?.profile?.skin} name={peer?.profile?.name||peer?.name||'好友'}/><div><strong>{incoming?'来自':'送给'} {peer?.profile?.name||peer?.name||'好友'}</strong><small>{i.plan.intent.title||catalog.find(c=>c.id===i.plan.intent.kind)?.name||'互动'} · {finished&&i.status==='playing'?'结果等待同步':labels[i.status]}</small></div></header>
- <p>{i.plan.intent.message}</p><details><summary>查看创作说明</summary><p>{i.plan.intent.brief}</p></details>
+ {historyOpen&&<RecordFeed scope={'interactions:'+self} title="玩法记录" onBack={onCloseHistory} items={items.map(i=>{const incoming=i.to===self,prepared=i.plan.version===2,peer=cloud?.directory.find(p=>p.id===(incoming?i.from:i.to)),local=effects.find(e=>e.id===i.id&&e.attempt===i.attempt),generating=local?.status==='generating',finished=local?.status==='completed';return {id:i.id,stamp:recordStamp(i),title:peer?.profile?.name||peer?.name||'好友',skin:peer?.profile?.skin,kind:i.plan.intent.title||catalog.find(c=>c.id===i.plan.intent.kind)?.name||'互动',status:finished&&i.status==='playing'?'结果等待同步':labels[i.status]||i.status,incoming,attention:incoming&&['pending','failed','ready','playing'].includes(i.status),eligible:incoming?['pending','failed','ready'].includes(i.status):!!i.reply||!['pending','cancelled'].includes(i.status),time:i.endedAt||i.acceptedAt||i.createdAt,message:i.plan.intent.message,reply:i.reply,children:<>
+ <details><summary>查看创作说明</summary><p>{i.plan.intent.brief}</p></details>
  {local?.error&&!finished&&<p className="lite-error">{local.error}</p>}
  {incoming&&(i.status==='pending'||i.status==='failed'||!prepared&&i.status==='accepted'&&!local)&&<>
- {(i.status==='pending'||i.attempt<2||!prepared)&&<label className="interaction-check"><input type="checkbox" checked={!!acceptCost[i.id]} onChange={e=>setAcceptCost({...acceptCost,[i.id]:e.target.checked})}/><span>{prepared?'运行报错时允许本机 Agent 尝试修复一次（可能消耗模型额度）。':'旧版邀请：允许本机 Agent 创作效果（可能消耗模型额度）。'}</span></label>}
- <small>{prepared?'效果已由发送方制作，仅在隔离容器运行；同意后直接播放。':'这是旧版方案邀请，接收后仍需等待创作。'}</small>
- <div className="interaction-actions">{i.status==='failed'&&prepared?i.attempt<2?<button disabled={disabled||working||!acceptCost[i.id]} onClick={()=>void start(i,'repair')}>修复后播放</button>:<small>已尝试修复，请让发送方重新制作。</small>:<button disabled={disabled||working||!prepared&&!acceptCost[i.id]||generating} onClick={()=>void start(i,'accept',!!acceptCost[i.id])}>{prepared?'同意并播放':i.status==='failed'?'重新创作':'接收并创作'}</button>}{i.status==='pending'&&<button disabled={disabled||working} onClick={()=>act('interactions/action',{id:i.id,action:'decline'})}>拒绝</button>}</div>
+ <details open={!prepared}><summary>{prepared?'运行出错时的修复选项（选填）':'创作授权（必须确认）'}</summary>{(i.status==='pending'||i.attempt<2||!prepared)&&<label className="interaction-check"><input type="checkbox" checked={!!acceptCost[i.id]} onChange={e=>setAcceptCost({...acceptCost,[i.id]:e.target.checked})}/><span>{prepared?'运行报错时允许本机 Agent 尝试修复一次（可能消耗模型额度）。':'旧版邀请：允许本机 Agent 创作效果（可能消耗模型额度）。'}</span></label>}
+ <small>{prepared?'正常播放不调用模型，仅修复报错时可能使用额度。':'这是旧版方案邀请，接收后仍需等待创作。'}</small></details>
+ <div className="interaction-actions">{i.status==='failed'&&prepared?i.attempt<2?<button disabled={disabled||working||!acceptCost[i.id]} onClick={()=>void start(i,'repair')}>修复后播放</button>:<small>已尝试修复，请让发送方重新制作。</small>:<button className="record-primary" disabled={disabled||working||!prepared&&!acceptCost[i.id]||generating} onClick={()=>void start(i,'accept',!!acceptCost[i.id])}>{prepared?'同意并播放':i.status==='failed'?'重新创作':'接收并创作'}</button>}{i.status==='pending'&&<button disabled={disabled||working} onClick={()=>act('interactions/action',{id:i.id,action:'decline'})}>拒绝</button>}</div>
  </>}
  {incoming&&i.status==='accepted'&&<div className="interaction-actions">{generating?<button onClick={()=>act('interactions/action',{id:i.id,action:'stop'})}>停止{prepared?'修复':'创作'}</button>:<small>处理结果同步中…</small>}</div>}
  {incoming&&i.status==='ready'&&<button className="primary-action" disabled={disabled||working} onClick={()=>void start(i,'play')}><Play size={14}/>播放效果</button>}
  {incoming&&i.status==='playing'&&!screen&&!finished&&<div className="interaction-actions"><button disabled={disabled||working} onClick={async()=>{try{await show(i,false)}catch(e){setError((e as Error).message)}}}>继续查看</button><button disabled={disabled} onClick={()=>act('interactions/action',{id:i.id,action:'complete'})}>结束展示</button></div>}
- {!incoming&&['pending','accepted','ready','failed'].includes(i.status)&&<button disabled={disabled} onClick={()=>act('interactions/action',{id:i.id,action:'cancel'})}>撤回</button>}{i.reply&&<p>回复：{i.reply}</p>}
- </article>})}</>}
+ {!incoming&&['pending','accepted','ready','failed'].includes(i.status)&&<button disabled={disabled} onClick={()=>act('interactions/action',{id:i.id,action:'cancel'})}>撤回</button>}
+ </>}})}/> }
  {screen&&<div className="interaction-overlay" role="dialog" aria-modal="true" aria-label={screen.preview?'效果预览':'互动效果'}><header><span>{screen.preview?'发送前预览':'来自好友的心意'}</span><button aria-label="结束互动展示" onClick={()=>finish('')}><X size={20}/></button></header><iframe ref={frame} title="隔离的互动效果" sandbox="allow-scripts" onLoad={()=>frame.current?.contentWindow?.postMessage({type:'zhijiao.check-errors'},'*')} referrerPolicy="no-referrer" srcDoc={screen.html}/><footer>{screen.preview?<button onClick={()=>finish('')}>预览完成</button>:<><input aria-label="互动回复" value={reply} maxLength={500} placeholder="回一句话（选填）" onChange={e=>setReply(e.target.value)}/><button onClick={()=>finish(reply)}>收下并结束</button></>}</footer></div>}
  </div>;
 }

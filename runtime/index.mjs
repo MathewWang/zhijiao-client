@@ -1,3 +1,4 @@
+import {createSocialExecutor,normalizeSocialAction} from './social-actions.mjs';
 import {peerUnread,markPeerActivities} from '../shared/conversations.mjs';
 import {pinOfficialUpdate,saveUpdateJob,flushUpdateReceipts} from './client-updater.mjs';
 import {InteractionRuntime,PLAY_CATALOG,wrapPresentation} from './interaction-runtime.mjs';
@@ -34,7 +35,7 @@ for(const m of state.messages)if(m.cloudEventKey&&m.cloudStatus==='done'&&m.clou
 for(const m of state.messages)if(m.cloudEventKey&&m.cloudStatus==='done'&&(m.text.startsWith('此前已回复')||m.text.startsWith('已把你确认的答复发给'))&&!m.channel){m.channel='agent-detail';legacyReportsChanged=true;}
 if(legacyReportsChanged)save();
 const jobs=new Map();const clients=new Set();let engines=await detect();
-let cloud;let interactions;let updatePreparing=false;
+let cloud;let interactions;let socialExecutor;let updatePreparing=false;
 const updateJobsDir=join(root,'.data','update-jobs');
 const updateInfo={currentVersion:JSON.parse(readFileSync(join(root,'package.json'),'utf8')).version,latestVersion:null,lastCheckedAt:null,error:''};
 let checkingUpdates=false;
@@ -74,13 +75,14 @@ async function execute(a,message,kind='chat',source='主人',incoming,pendingMes
  let cloudContext='';
  if(cloudBound){
   await cloud.poll();const c=cloud.snapshot();
-  directory=c.directory.filter(d=>d.id!==c.deviceId).map(d=>({id:d.id,name:d.profile?.name||d.name,ownerName:d.name,ownerId:d.id,online:d.online,publicBio:d.profile?.publicBio||''}));
+  directory=c.directory.filter(d=>d.id!==c.deviceId).map(d=>({id:d.id,name:d.profile?.name||d.name,ownerName:d.name,ownerId:d.id,online:d.online,directProtocol:d.directProtocol,updateProtocol:d.updateProtocol,interactionProtocol:d.interactionProtocol,publicBio:d.profile?.publicBio||''}));
   contacts=directory.filter(d=>c.friends.includes(d.id));requests=c.requests.map(r=>({from:r.sender,to:r.recipient,status:r.status}));
-  cloudContext=`\n云端连接状态：${c.connected?'已连接':'已断开，下面是缓存资料，不能断言当前在线'}。目录注册设备数 ${c.directory.length}，最近心跳在线 Agent 数 ${c.directory.filter(d=>d.online).length}（含本机），本机助理 ${a.name}。这是设备数，不是去重人数。公开助理名字可以告诉主人，ownerName 在此为公开设备别名，并非实名。串门请引导主人点击桌面“好友串门”。`+JSON.stringify({recentCloudMessages:c.messages.slice(0,6).map(m=>({from:m.message.sender,text:m.message.text,result:m.result,status:m.status}))});
+  cloudContext=`\n云端连接状态：${c.connected?'已连接':'已断开，下面是缓存资料，不能断言当前在线'}。目录注册设备数 ${c.directory.length}，最近心跳在线 Agent 数 ${c.directory.filter(d=>d.online).length}（含本机），本机助理 ${a.name}。这是设备数，不是去重人数。公开助理名字可以告诉主人，ownerName 在此为公开设备别名，并非实名。主人明确要求留言、提问、串门、邀请更新或制作效果时，使用动作目录里的对应动作；不要把操作降级成普通提问。`+JSON.stringify({recentCloudMessages:c.messages.slice(0,6).map(m=>({from:m.message.sender,text:m.message.text,result:m.result,status:m.status}))});
  }
  const result=await runAgent({agent:a,history,message:input,source,dataDir,signal:controller.signal,instructions:kind==='chat'?socialInstructions(contacts,directory,requests)+cloudContext:''});
- let text=result;
- if(kind==='chat'){const decision=parseDecision(result,contacts,directory);text=decision.reply;if(cloudBound&&decision.requestFriend){await cloud.action('request',{to:decision.requestFriend.to});text='云端好友申请已发出，等待对方同意。';}
+ let text=result,socialConfirmationId;
+ if(kind==='chat'){const decision=parseDecision(result,contacts,directory);text=decision.reply;if(decision.action){if(!cloudBound)throw Error('请先连接云端，再使用这个动作');const receipt=await socialExecutor(decision.action,{key:userMessage.id,source});text=receipt.text;socialConfirmationId=receipt.confirmationId;}
+ else if(cloudBound&&decision.requestFriend){await cloud.action('request',{to:decision.requestFriend.to});text='云端好友申请已发出，等待对方同意。';}
  else if(cloudBound&&decision.sendMessage){await cloud.action('message',{...decision.sendMessage,ownerTurn:true});text='我已经替你问了，收到回复就向你汇报。';}
  else if(decision.requestFriend){const target=agentBy(decision.requestFriend.to);const result=invite(a.id,target.id);text=result.alreadyFriends?`已经和${target.ownerName}建立联系，你可以直接问我问题。`:`找到${target.ownerName}的公开名片了，好友申请已发出，正在等待对方同意。`; }if(!cloudBound&&decision.sendMessage){const target=agentBy(decision.sendMessage.to);const correlation=userMessage.id;
  if(!state.messages.some(m=>m.delegationId===correlation)){addMessage(a.id,'assistant',decision.sendMessage.text,{channel:'friend',peerId:target.id,delegationId:correlation});addMessage(target.id,'friend',decision.sendMessage.text,{channel:'friend',peerId:a.id,source:a.name,status:'queued',delegationId:correlation});}
@@ -89,7 +91,7 @@ async function execute(a,message,kind='chat',source='主人',incoming,pendingMes
  if(kind==='report'){state.reports.unshift({id:randomUUID(),agentId:a.id,text,createdAt:Date.now(),read:false});}
  else if(incoming){incoming.status='done';addMessage(a.id,'assistant',text,{channel:'friend',peerId:incoming.peerId});addMessage(incoming.peerId,'friend',text,{channel:'friend',peerId:a.id,source:a.name,status:'done',replyTo:incoming.id});
  if(incoming.delegationId&&!state.messages.some(m=>m.followupOf===incoming.id)){addMessage(incoming.peerId,'system',`你刚通过联系人${a.ownerName||a.name}的助理收到了回复。请向主人汇报${a.ownerName||a.name}那边的消息，不提及背后的助理名字或引擎，用“对方表示”等措辞区分来源；不知道就说尚未了解，不推断未确认事实；不要再次联系好友。你发送的问题：${incoming.text}。对方的实际回复：${text}`,{channel:'internal',kind:'followup',followupOf:incoming.id,status:'queued'});}drain(incoming.peerId);}
- else {addMessage(a.id,'assistant',text);if(kind==='followup'){pendingMessage.status='done';state.reports.unshift({id:randomUUID(),agentId:a.id,text,createdAt:Date.now(),read:false});}}
+ else {addMessage(a.id,'assistant',text,{...(socialConfirmationId?{socialConfirmationId}:{})});if(kind==='followup'){pendingMessage.status='done';state.reports.unshift({id:randomUUID(),agentId:a.id,text,createdAt:Date.now(),read:false});}}
  a.lastError=null;
  }catch(e){a.lastError=e.message;if(userMessage)userMessage.status='failed';if(pendingMessage?.kind==='followup')pendingMessage.status='failed';if(incoming)incoming.status='failed';addMessage(a.id,'error',e.message)}
  finally{jobs.delete(a.id);persist();for(const peer of state.agents)processInvites(peer.id);drain(a.id)}
@@ -107,6 +109,17 @@ cloud=new DesktopCloud({dir:resolve(process.env.CLIENT_DATA_DIR||(process.env.CO
 function assertUpdateIdle(){if(jobs.size||interactions.jobs.size||cloud.processing||cloud.state.messages.some(m=>m.status==='drafting')||interactions.snapshot().some(e=>['generating','playing'].includes(e.status))||cloud.state.interactions?.some(i=>i.to===cloud.config?.id&&['playing','accepted'].includes(i.status))||cloud.state.visits?.some(v=>v.status==='active'))throw Error('有任务、播放或串门正在进行，请结束后再升级')}
 const cloudTimer=setInterval(()=>void cloud.poll(),5000);cloudTimer.unref();
 interactions=new InteractionRuntime({dbPath:join(dataDir,'interactions.sqlite'),cloud,getAgent:()=>state.agents.find(a=>a.id===cloud.config?.localAgentId),dataDir,onChange:notify});
+socialExecutor=createSocialExecutor({cloud,fetchRelease,prepareEffect:(action,{key,name})=>{
+ state.socialActions??=[];let item=state.socialActions.find(i=>i.turnId===key&&i.agentId===cloud.config.localAgentId);
+ if(!item){item={id:randomUUID(),turnId:key,agentId:cloud.config.localAgentId,action,status:'pending',createdAt:Date.now()};state.socialActions.push(item);persist()}
+ return {confirmationId:item.id,text:`已为${name}准备好特效创作请求。请确认制作额度；完成后在你们的聊天窗口预览，再由你决定发送。`};
+}});
+function startLocalEffect(to,request,old,onCreated){
+ const a=agentBy(cloud.config?.localAgentId);if(!a.enabled||jobs.has(a.id)||interactions.jobs.size)throw Error('助理正在忙或休息中');if(!cloud.state.friends.includes(to))throw Error('请先选择好友');
+ const payload=old?interactions.restartDraft(old.id):request,id=old?.id||interactions.beginDraft(to,payload),controller=new AbortController();onCreated?.(id);jobs.set(a.id,controller);notify();
+ void interactions.draft(payload,controller.signal).then(plan=>interactions.finishDraft(id,plan)).catch(error=>interactions.finishDraft(id,null,error.message)).finally(()=>{jobs.delete(a.id);notify()});return id;
+}
+
 void cloud.start();
 const updateStartup=setTimeout(()=>void checkUpdates(),10000);updateStartup.unref();
 const updateReceiptTimer=setInterval(()=>void flushUpdateReceipts(updateJobsDir),30000);updateReceiptTimer.unref();void flushUpdateReceipts(updateJobsDir);
@@ -128,7 +141,7 @@ const server=http.createServer(async(req,res)=>{
  if(req.method!=='POST')return send(res,405,{error:'不支持的方法'});
  const b=await body(req);const p=url.pathname;
  if(updatePreparing&&!p.startsWith('/api/update-invitations/'))throw Error('客户端正在准备升级，请稍后再试');
- if(p==='/api/update-invitations/send'){if(!cloud.client)throw Error('请先连接云端');const release=await fetchRelease();const item=await cloud.client.api('/v1/update-invitations',{to:b.to,key:b.key,targetVersion:release.version,note:b.note});await cloud.poll();return send(res,200,item)}
+ if(p==='/api/update-invitations/send'){return send(res,200,await socialExecutor({type:'update.invite',to:b.to,text:b.note},{key:b.key,source:'主人'}))}
  if(p==='/api/update-invitations/action'){if(!['decline','cancel'].includes(b.action))throw Error('同意更新必须由本机桌面确认');const result=await cloud.client.api('/v1/update-invitations/action',{id:b.id,action:b.action});await cloud.poll();return send(res,200,result)}
  if(p==='/api/update-invitations/prepare'){
   if(b.confirm!==true||updatePreparing)throw Error('请由主人明确确认本次升级');if(cloud.config?.relay!=='https://agentmen.cn')throw Error('自动升级目前仅支持官方知交信使服务');assertUpdateIdle();updatePreparing=true;notify();
@@ -141,11 +154,16 @@ const server=http.createServer(async(req,res)=>{
  if(p==='/api/interactions/templates-save')return send(res,200,interactions.saveTemplate(b));
  if(p==='/api/interactions/templates-delete')return send(res,200,interactions.deleteTemplate(b.id));
  if(p==='/api/conversations/read'){if(typeof b.peer!=='string'||!cloud.state.directory.some(d=>d.id===b.peer))throw Error('好友不存在');state.peerSeen=markPeerActivities({cloud:cloud.snapshot(),localPlayDrafts:interactions.drafts()},state.peerSeen||{},b.peer);persist();return send(res,200,{ok:true})}
+ if(p==='/api/social-actions/confirm'||p==='/api/social-actions/decline'){
+ const item=state.socialActions?.find(i=>i.id===b.id&&i.agentId===cloud.config?.localAgentId);if(!item)throw Error('操作请求不存在');
+ if(item.status!=='pending')return send(res,200,{ok:true,status:item.status,draftId:item.draftId});
+ if(p.endsWith('decline')){item.status='declined';persist();return send(res,200,{ok:true})}
+ if(b.confirmCost!==true)throw Error('请明确确认本次创作可能使用模型额度');
+ const action=normalizeSocialAction(item.action,cloud.state.directory.filter(d=>cloud.state.friends.includes(d.id)));
+ startLocalEffect(action.to,{kind:action.kind,title:action.title||undefined,message:action.text,brief:action.brief||(action.kind==='gift.flowers'?'一束花缓缓展开，搭配柔和花瓣与祝福。':'夜空中绽放烟花，出现祝福。')},undefined,id=>{item.draftId=id;item.status='started';persist()});return send(res,200,{ok:true,draftId:item.draftId});}
  if(p==='/api/interactions/create-local'||p==='/api/interactions/retry-local'){
- if(b.confirmCost!==true)throw Error('请先确认本次模型生成');const a=agentBy(cloud.config?.localAgentId);if(!a.enabled||jobs.has(a.id)||interactions.jobs.size)throw Error('助理正在忙或休息中');
- const old=p.endsWith('retry-local')?interactions.localDraft(b.id):null;const to=old?.peer||b.to;if(!cloud.state.friends.includes(to))throw Error('请先选择好友');
- const request=old?interactions.restartDraft(old.id):{kind:b.kind,title:b.title,message:b.message,brief:b.brief};const id=old?.id||interactions.beginDraft(to,request),controller=new AbortController();jobs.set(a.id,controller);notify();
- void interactions.draft(request,controller.signal).then(plan=>interactions.finishDraft(id,plan)).catch(error=>interactions.finishDraft(id,null,error.message)).finally(()=>{jobs.delete(a.id);notify()});return send(res,202,{id});}
+ if(b.confirmCost!==true)throw Error('请先确认本次模型生成');const old=p.endsWith('retry-local')?interactions.localDraft(b.id):null;
+ const id=startLocalEffect(old?.peer||b.to,{kind:b.kind,title:b.title,message:b.message,brief:b.brief},old);return send(res,202,{id});}
  if(p==='/api/interactions/draft'){
  if(b.to&&!cloud.state.friends.includes(b.to))throw Error('请先选择好友');if(b.confirmCost!==true)throw Error('请先确认本次模型生成');const a=agentBy(cloud.config?.localAgentId);if(jobs.has(a.id)||interactions.jobs.size)throw Error('助理正在忙');const c=new AbortController();jobs.set(a.id,c);notify();try{const plan=await interactions.draft(b,c.signal);const draftId=b.to?interactions.saveDraft(b.to,plan):undefined;return send(res,200,{plan,draftId});}finally{jobs.delete(a.id);notify();}}
  if(p==='/api/interactions/preview'){

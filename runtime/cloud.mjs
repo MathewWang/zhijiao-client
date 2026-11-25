@@ -124,7 +124,7 @@ export class DesktopCloud {
     try{await this.client.ownerReply(body.id,reply);this.onOwnerEvent?.({key:`${this.config.id}:${body.id}:owner-answer`,agentId:this.config.localAgentId,role:'user',reportKind:'owner',text:`请这样回复${peer?.profile?.name||peer?.name||'对方'}：${reply}`});}finally{this.refreshMessages();}}
   }else if(path==='message'){
    const agent=this.getAgent(this.config.localAgentId);if(!agent?.enabled)throw Error('请先让助理上线');
-   const key=this.client.queue(body.to,body.text);
+   const key=this.client.queue(body.to,body.text,'question',null,body.key);
    const peer=this.state.directory.find(d=>d.id===body.to);
    if(!body.ownerTurn)this.onOwnerEvent?.({key:`${this.config.id}:outgoing:${key}`,agentId:this.config.localAgentId,role:'user',reportKind:'owner',text:`帮我问${peer?.profile?.name||peer?.name||'对方'}：${body.text}`});
    await this.client.flush();

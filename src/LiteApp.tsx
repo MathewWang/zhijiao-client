@@ -1,3 +1,4 @@
+import {SocialActionConfirmation,type SocialActionRequest} from './SocialActionConfirmation';
 import {isAgentMessage} from '../shared/conversations.mjs';
 import {desktopVisitors} from '../shared/desktop-visitors.mjs';
 import {DesktopVisitor} from './DesktopVisitor';
@@ -9,8 +10,8 @@ import {Registration} from './Registration';
 import type {Visit} from './Visits';
 import './lite.css';import './companion-theme.css';
 type Agent={id:string;name:string;ownerName:string;ownerId:string;shareableProfile:string;skin:string;enabled:boolean;engine?:string;model?:string;publicBio?:string;lastError?:string};
-type Message={id:string;agentId:string;role:string;text:string;channel?:string;createdAt:number;updateVersion?:string};
-type State={peerUnread?:Record<string,number>;updates?:{currentVersion:string;latestVersion:string|null;lastCheckedAt:number|null;error:string};cloud?:CloudState;visits?:Visit[];registrationComplete?:boolean;engines?:{id:string;installed:boolean;label:string}[];agents:Agent[];primaryAgentId?:string;messages:Message[];busy:string[]};
+type Message={socialConfirmationId?:string;id:string;agentId:string;role:string;text:string;channel?:string;createdAt:number;updateVersion?:string};
+type State={socialActions?:SocialActionRequest[];peerUnread?:Record<string,number>;updates?:{currentVersion:string;latestVersion:string|null;lastCheckedAt:number|null;error:string};cloud?:CloudState;visits?:Visit[];registrationComplete?:boolean;engines?:{id:string;installed:boolean;label:string}[];agents:Agent[];primaryAgentId?:string;messages:Message[];busy:string[]};
 const desktop=(window as any).desktop;
 async function post(path:string,body:unknown){const r=await fetch('/api/'+path,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(body)});const d=await r.json();if(!r.ok)throw Error(d.error);return d}
 export function LiteApp(){
@@ -43,7 +44,7 @@ export function LiteApp(){
  function openFriend(id:string){if(desktop)desktop.openFriend(id);else location.assign('/?friend='+encodeURIComponent(id))}
  function openNotice(){const peer=Object.keys(peerUnread).find(id=>peerUnread[id]>0);if(peer){openFriend(peer);return}setTab(friendPending?'friends':'chat');setExpanded(true)}
  const composer=<div className="composer-area"><form className="lite-composer" onSubmit={send}><textarea ref={input} aria-label={`对${agent?.name||'助理'}说`} placeholder={`和${agent?.name||'助理'}说点什么…`} value={text} onChange={e=>setText(e.target.value)} onKeyDown={e=>{if(e.key==='Enter'&&!e.shiftKey&&!e.nativeEvent.isComposing){e.preventDefault();void send(e)}}}/>{busy?<button aria-label="停止" type="button" onClick={()=>act('cancel',{id:agent?.id})}><Square size={16}/></button>:<button className="lite-send" aria-label="发送" disabled={!text.trim()||sending||!agent?.enabled||!connected}><Send size={18}/></button>}</form></div>;
- const bubbles=messages.map(m=><div className={`recent-bubble ${m.role}`} key={m.id}><p>{m.text}{m.updateVersion&&<button className="update-copy" onClick={()=>copyUpdate(m.updateVersion!)}>复制升级指引</button>}</p></div>);
+ const bubbles=messages.map(m=><div className={`recent-bubble ${m.role}`} key={m.id}><p>{m.text}{m.updateVersion&&<button className="update-copy" onClick={()=>copyUpdate(m.updateVersion!)}>复制升级指引</button>}</p>{m.socialConfirmationId&&state.socialActions?.filter(item=>item.id===m.socialConfirmationId).map(item=><SocialActionConfirmation key={item.id} item={item} name={cloud?.directory.find(p=>p.id===item.action.to)?.profile?.name||cloud?.directory.find(p=>p.id===item.action.to)?.name||'好友'} disabled={sending||busy||!connected} act={act} onOpen={()=>openFriend(item.action.to)}/>)}</div>);
  if(visitorMode){const item=desktopVisitors(state,clock).find(v=>v.id===visitorMode&&v.hostId===pinnedId);return item?<DesktopVisitor key={item.id} visitor={item} onEnd={async reply=>{if(!await act(cloud?.registered?'cloud/visit-action':'visits/action',{id:item.id,actor:agent?.id,action:'end',reply}))throw Error('送客暂未成功，请稍后再试');return true}}/>:<div className="visitor-waiting"/>}
  if(connected&&state.registrationComplete===false)return <Registration engines={state.engines}/>;
  if(historyMode)return <div className="history-page"><header className="lite-heading"><strong>和{agent?.name}的对话</strong><button aria-label="收起历史" onClick={()=>desktop?desktop.hideHistory():location.assign('/')}><X size={18}/></button></header><div className="history-messages recent-bubbles" ref={messageViewport}>{bubbles}{busy&&<p className="lite-busy">正在处理…</p>}</div>{error&&<p role="alert" className="lite-error">{error}</p>}{composer}</div>;

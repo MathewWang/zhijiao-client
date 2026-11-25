@@ -52,6 +52,7 @@ function openHistory(id){
 }
 function openFriend(peer){
  if(typeof peer!=='string'||!desktopState.cloud?.friends?.includes(peer))return;
+ for(const pet of pets.values())if(!pet.isDestroyed())pet.webContents.send('desktop-open','collapse');
  friendPeer=peer;
  if(!friendWindow||friendWindow.isDestroyed()){
   const pet=pets.values().next().value;let area=screen.getPrimaryDisplay().workArea;

@@ -9,7 +9,7 @@ import {_electron} from '@playwright/test';
 import {createRequire} from 'node:module';
 const require=createRequire(import.meta.url),root=resolve(dirname(fileURLToPath(import.meta.url)),'..');
 const temp=mkdtempSync(join(tmpdir(),'zhijiao-electron-smoke-'));
-const state={registrationComplete:true,primaryAgentId:'smoke',agents:[{id:'smoke',name:'兼容性测试',ownerName:'测试',ownerId:'test',skin:'taotao',enabled:true}],messages:[{id:'owner-smoke',agentId:'smoke',role:'assistant',text:'Agent 测试消息'}],links:[],visits:[],busy:[],cloud:{registered:true,connected:true,agentId:'smoke',deviceId:'me',directory:[{id:'friend',name:'好友测试',online:true,directProtocol:1,interactionProtocol:2,profile:{name:'好友测试',skin:'xiaobai'}}],friends:['friend'],requests:[],visits:[],messages:[],interactions:[],updateInvitations:[],direct:{messages:[{id:'incoming-test',peer:'friend',incoming:true,text:'直聊测试',createdAt:1,status:'delivered',read:false}],unread:{friend:1}}}};
+const state={registrationComplete:true,primaryAgentId:'smoke',agents:[{id:'smoke',name:'兼容性测试',ownerName:'测试',ownerId:'test',skin:'taotao',enabled:true}],messages:[{id:'owner-smoke',agentId:'smoke',role:'assistant',text:'Agent 测试消息'}],links:[],visits:[],busy:[],cloud:{registered:true,connected:true,agentId:'smoke',deviceId:'me',directory:[{id:'friend',name:'好友测试',online:true,directProtocol:1,interactionProtocol:2,profile:{name:'好友测试',skin:'xiaobai',publicBio:'喜欢分享灵感的朋友'}}],friends:['friend'],requests:[],visits:[],messages:[],interactions:[],updateInvitations:[],direct:{messages:[{id:'incoming-test',peer:'friend',incoming:true,text:'直聊测试',createdAt:1,status:'delivered',read:false}],unread:{friend:1}}}};
 const mime={'.html':'text/html','.js':'text/javascript','.css':'text/css','.png':'image/png','.svg':'image/svg+xml'};
 const streams=new Set(),directSends=[];const notify=()=>{for(const stream of streams)stream.write('data: '+JSON.stringify(state)+'\n\n')};
 const server=createServer((req,res)=>{
@@ -29,7 +29,10 @@ try{
  const page=await app.firstWindow();await page.waitForFunction(()=>typeof window.desktop?.getStatus==='function');
  assert.equal((await page.evaluate(()=>window.desktop.getStatus())).agents[0].id,'smoke');
  assert.equal(await page.locator('.companion-tabs button').count(),2);assert.equal(await page.locator('.companion-tabs button').first().textContent(),'Agent');assert.equal(await page.locator('.recent-bubble .companion-avatar').count(),0);assert.equal(await page.getByRole('button',{name:'展开玩法'}).count(),0);
+ await page.getByRole('button',{name:'点击兼容性测试',exact:true}).click();await page.waitForFunction(()=>document.querySelector('.whisper-panel')?.getAttribute('aria-hidden')==='false');
  const next=app.waitForEvent('window');await page.evaluate(()=>window.desktop.openFriend('friend'));const friendPage=await next;await friendPage.getByRole('textbox',{name:'好友聊天消息'}).waitFor();
+ await friendPage.getByRole('complementary',{name:'好友公开资料'}).getByText('喜欢分享灵感的朋友',{exact:true}).waitFor();assert.equal(await friendPage.locator('.friend-conversation-list').count(),0);await page.waitForFunction(()=>document.querySelector('.whisper-panel')?.getAttribute('aria-hidden')==='true');
+
  await friendPage.getByRole('textbox',{name:'好友聊天消息'}).fill('主人直接发送');await friendPage.getByRole('button',{name:'发送',exact:true}).click();await friendPage.getByText('主人直接发送',{exact:true}).first().waitFor();assert.equal(state.cloud.direct.unread.friend,undefined);assert.equal(directSends.length,1);assert.equal(directSends[0].to,'friend');
  await friendPage.getByRole('button',{name:'展开玩法'}).click();await friendPage.getByRole('button',{name:'送花',exact:true}).waitFor();await friendPage.screenshot({path:join(tmpdir(),'zhijiao-friend-chat-native.png')});
  await app.evaluate(({BrowserWindow})=>{const wins=BrowserWindow.getAllWindows();wins.find(w=>w.webContents.getURL().includes('?friend='))?.hide();wins.find(w=>!w.webContents.getURL().includes('?friend='))?.focus()});

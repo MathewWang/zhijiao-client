@@ -1,3 +1,4 @@
+import {EffectPlayback,type PlaybackResult} from './EffectPlayback';
 import {RecordFeed,type RecordItem} from './RecordFeed';
 import {recordStamp} from '../shared/record-inbox.mjs';
 import {PlayComposer} from './PlayComposer';
@@ -12,9 +13,9 @@ type Screen={id:string;html:string;duration:number;preview?:boolean;replay?:bool
 const labels:Record<string,string>={pending:'等待接收',accepted:'正在处理',ready:'等待展示',playing:'正在展示',completed:'展示结束',declined:'已拒绝',cancelled:'已撤回',expired:'已过期',failed:'运行失败'};
 const catalog=[{id:'gift.flowers',name:'送花',icon:Flower2,brief:'一束花缓缓展开，搭配柔和花瓣与祝福文字。'},{id:'celebration.fireworks',name:'烟花',icon:Sparkles,brief:'深色夜空中绽放几束绚丽烟花，最后出现祝福文字。'},{id:'custom.effect',name:'自定义',icon:WandSparkles,brief:'例如：让我的助理来做客，留下一坨卡通 💩，得意地招手后溜走。'}];
 export function Interactions({cloud,effects,initialKind,initialTemplate,act,disabled,onChooseFriends,historyOpen=false,onCloseHistory,active=true,onDraftReady,recipientId,onPrepared}:{cloud?:CloudState;effects:Effect[];initialKind:string;initialTemplate?:PlayTemplate;act:(path:string,data:unknown)=>Promise<boolean>;disabled:boolean;onChooseFriends?:()=>void;historyOpen?:boolean;onCloseHistory?:()=>void;active?:boolean;recipientId?:string;onDraftReady?:(ready:boolean)=>void;onPrepared?:()=>void}){
- const [kind,setKind]=useState(initialKind||catalog[0].id),[to,setTo]=useState(''),[message,setMessage]=useState(''),[brief,setBrief]=useState(''),[cost,setCost]=useState(false),[plan,setPlan]=useState<Interaction['plan']|null>(null),[key,setKey]=useState(''),[working,setWorking]=useState(false),[error,setError]=useState(''),[screen,setScreen]=useState<Screen|null>(null),[reply,setReply]=useState(''),[previewed,setPreviewed]=useState(false);
+ const [kind,setKind]=useState(initialKind||catalog[0].id),[to,setTo]=useState(''),[message,setMessage]=useState(''),[brief,setBrief]=useState(''),[cost,setCost]=useState(false),[plan,setPlan]=useState<Interaction['plan']|null>(null),[key,setKey]=useState(''),[working,setWorking]=useState(false),[error,setError]=useState(''),[screen,setScreen]=useState<Screen|null>(null),[previewed,setPreviewed]=useState(false);
  const [customTitle,setCustomTitle]=useState(''),[customIcon,setCustomIcon]=useState('✨'),[templateId,setTemplateId]=useState(''),[revision,setRevision]=useState(''),[saveNotice,setSaveNotice]=useState('');
- const [acceptCost,setAcceptCost]=useState<Record<string,boolean>>({});const frame=useRef<HTMLIFrameElement>(null);const finishing=useRef(false);const activeScreen=useRef<Screen|null>(null);const failing=useRef(false);
+ const [acceptCost,setAcceptCost]=useState<Record<string,boolean>>({});const finishing=useRef(false);const activeScreen=useRef<Screen|null>(null);const failing=useRef(false);
  const resultStatus=useRef<HTMLDivElement>(null);const autoPreviewPending=useRef(false);const [drafting,setDrafting]=useState(false);
  const friends=cloud?.directory.filter(p=>cloud.friends.includes(p.id)&&(!recipientId||p.id===recipientId))||[],self=cloud?.deviceId;
  const items=[...(cloud?.interactions||[])].reverse(),selected=catalog.find(c=>c.id===kind)||catalog[0];
@@ -29,19 +30,18 @@ export function Interactions({cloud,effects,initialKind,initialTemplate,act,disa
  async function removeMyPlay(){if(working)return;setWorking(true);try{await request('templates-delete',{id:templateId});setTemplateId('');setSaveNotice('已从我的玩法移除。')}catch(e){setError((e as Error).message)}finally{setWorking(false)}}
 
  async function preview(){if(!plan)return;setWorking(true);setError('');try{const data=await request('preview',{plan,to});finishing.current=false;failing.current=false;setScreen({id:'preview',html:data.html,duration:plan.presentation.durationSeconds,preview:true});setPreviewed(true);onDraftReady?.(false);}catch(e){setError((e as Error).message)}finally{setWorking(false)}}
- async function show(i:Interaction,repair=false,replay=false){const r=await fetch('/api/interactions/artifact?id='+encodeURIComponent(i.id)+(replay?'&replay=1':''));const data=await r.json();if(!r.ok)throw Error(data.error);setReply('');finishing.current=false;failing.current=false;setScreen({id:i.id,html:data.html,duration:i.plan.presentation.durationSeconds,repair,preview:replay,replay});}
+ async function show(i:Interaction,repair=false,replay=false){const r=await fetch('/api/interactions/artifact?id='+encodeURIComponent(i.id)+(replay?'&replay=1':''));const data=await r.json();if(!r.ok)throw Error(data.error);finishing.current=false;failing.current=false;setScreen({id:i.id,html:data.html,duration:i.plan.presentation.durationSeconds,repair,preview:replay,replay});}
  async function start(i:Interaction,action='accept',allowRepair=false){setWorking(true);setError('');try{if(!await act('interactions/action',{id:i.id,action,confirmCost:action==='repair'||i.plan.version===1}))return;if(action==='repair'&&!await act('interactions/action',{id:i.id,action:'play'}))return;if(i.plan.version===2||action==='play')await show(i,allowRepair);}catch(e){setError((e as Error).message)}finally{setWorking(false)}}
- async function finish(text=''){const s=activeScreen.current;if(!s||finishing.current)return;finishing.current=true;activeScreen.current=null;setScreen(null);if(!s.preview)await act('interactions/action',{id:s.id,action:'complete',reply:text});finishing.current=false;}
- useEffect(()=>{if(!screen)return;const handler=(event:MessageEvent)=>{
-  if(event.source!==frame.current?.contentWindow||event.data?.type!=='zhijiao.effect-error'||failing.current)return;
-  failing.current=true;const s=screen;activeScreen.current=null;setScreen(null);const detail=String(event.data.error||'脚本运行失败').slice(0,600);
+ async function finish(){const s=activeScreen.current;if(!s||finishing.current)return;finishing.current=true;activeScreen.current=null;setScreen(null);if(!s.preview)await act('interactions/action',{id:s.id,action:'complete'});finishing.current=false;}
+ async function playbackDone(result:PlaybackResult){
+  if(result.reason!=='error'){await finish();return;}if(!screen||failing.current)return;
+  failing.current=true;const s=screen;activeScreen.current=null;setScreen(null);const detail=String(result.error||'播放失败').slice(0,600);
   if(s.preview){setPreviewed(false);setError('预览运行出错，请重新制作效果。'+detail);return;}
-  void(async()=>{setWorking(true);try{if(!await act('interactions/action',{id:s.id,action:'fail',error:detail}))return;if(s.repair){setError('效果运行出错，Agent 正在尝试修复…');if(await act('interactions/action',{id:s.id,action:'repair',error:detail,confirmCost:true})){const i=items.find(i=>i.id===s.id);if(i&&await act('interactions/action',{id:s.id,action:'play'})){setError('');await show(i,false);}}}else setError('效果运行出错，可授权 Agent 修复后再播放。');}catch(e){setError((e as Error).message)}finally{setWorking(false)}})();
- };window.addEventListener('message',handler);return()=>window.removeEventListener('message',handler)},[screen?.id,screen?.html]);
- useEffect(()=>{if(!screen||screen.preview)return;const t=setTimeout(()=>void finish(''),screen.duration*1000);return()=>clearTimeout(t)},[screen]);
+  setWorking(true);try{if(!await act('interactions/action',{id:s.id,action:'fail',error:detail}))return;if(s.repair){setError('效果运行出错，Agent 正在尝试修复…');if(await act('interactions/action',{id:s.id,action:'repair',error:detail,confirmCost:true})){const i=items.find(i=>i.id===s.id);if(i&&await act('interactions/action',{id:s.id,action:'play'})){setError('');await show(i,false);}}}else setError('效果运行出错，可授权 Agent 修复后再播放。');}catch(e){setError((e as Error).message)}finally{setWorking(false)}
+ }
  useEffect(()=>{if(active&&!historyOpen&&plan&&autoPreviewPending.current){autoPreviewPending.current=false;void preview()}},[active,historyOpen,plan]);
  useEffect(()=>{if(active&&!historyOpen&&plan&&!screen)resultStatus.current?.scrollIntoView({block:'start',behavior:'smooth'})},[active,historyOpen,plan,screen]);
- useEffect(()=>{if(!active&&activeScreen.current)void finish('')},[active]);
+ useEffect(()=>{if(!active&&activeScreen.current)void finish()},[active]);
  async function submit(){if(!plan){if(cost&&to&&message.trim())void draft();return;}if(!previewed)return;setWorking(true);try{if(await act('interactions/send',{to,key,plan})){resetPlan();setMessage('')}}finally{setWorking(false)}}
  return <div className="interaction-panel">
  {!historyOpen&&<PlayComposer title={kind==='custom.effect'&&customTitle?customTitle:selected.name} icon={<selected.icon size={18}/>} status={<>
@@ -68,6 +68,6 @@ export function Interactions({cloud,effects,initialKind,initialTemplate,act,disa
  {incoming&&i.status==='completed'&&<button disabled={working} onClick={async()=>{try{await show(i,false,true)}catch(e){setError((e as Error).message)}}}>再次查看</button>}
  {!incoming&&['pending','accepted','ready','failed'].includes(i.status)&&<button disabled={disabled} onClick={()=>act('interactions/action',{id:i.id,action:'cancel'})}>撤回</button>}
  </>}})}/> }
- {screen&&<div className="interaction-overlay" role="dialog" aria-modal="true" aria-label={screen.preview?'效果预览':'互动效果'}><header><span>{screen.replay?'再次查看':screen.preview?'发送前预览':'来自好友的心意'}</span><button aria-label="结束互动展示" onClick={()=>finish('')}><X size={20}/></button></header><iframe ref={frame} title="隔离的互动效果" sandbox="allow-scripts" onLoad={()=>frame.current?.contentWindow?.postMessage({type:'zhijiao.check-errors'},'*')} referrerPolicy="no-referrer" srcDoc={screen.html}/><footer>{screen.preview?<><span>{screen.replay?'仅本机重播 · 不重复发送回执':'仅本机预览 · 尚未发送'}</span><button onClick={()=>{const i=items.find(i=>i.id===screen.id);if(screen.replay&&i)void show(i,false,true);else void preview()}}><Play size={13}/>重播</button><button onClick={()=>finish('')}>{screen.replay?'关闭':'满意，返回发送'}</button></>:<><input aria-label="互动回复" value={reply} maxLength={500} placeholder="回一句话（选填）" onChange={e=>setReply(e.target.value)}/><button onClick={()=>finish(reply)}>收下并结束</button></>}</footer></div>}
+ {screen&&<EffectPlayback key={screen.id+screen.html} html={screen.html} duration={screen.duration} onDone={result=>void playbackDone(result)}/>}
  </div>;
 }

@@ -1,3 +1,4 @@
+const {createEffectPlayer}=require('./effect-window.cjs');
 const {app,BrowserWindow,ipcMain,screen,Tray,Menu,nativeImage,shell,session,powerMonitor}=require('electron');
 const {spawn}=require('node:child_process');
 const path=require('node:path');
@@ -36,6 +37,7 @@ const visitors=new Map();
 const pets=new Map(),histories=new Map(),placements=new Map();
 const url='http://127.0.0.1:4317';
 const preferences={preload:path.join(__dirname,'preload.cjs'),contextIsolation:true,nodeIntegration:false};
+const effectPlayer=createEffectPlayer({BrowserWindow,screen,preferences,url});
 async function ready(){for(let i=0;i<80;i++){try{const r=await fetch(url+'/api/state');if(r.ok)return}catch{}await new Promise(r=>setTimeout(r,250))}throw Error('本地服务启动超时')}
 function openHistory(id){
  if(setup){setup.show();return}
@@ -141,6 +143,11 @@ app.whenReady().then(async()=>{
   try{const env={...process.env,PATH:'/opt/homebrew/bin:/usr/local/bin:'+process.env.PATH};delete env.ELECTRON_RUN_AS_NODE;const updater=spawn('node',[path.join(__dirname,'scripts/update-approved.mjs'),result.file,String(process.pid)],{cwd:__dirname,env,detached:true,stdio:['ignore',fd,fd]});await new Promise((resolve,reject)=>{updater.once('spawn',resolve);updater.once('error',reject)});updater.unref();setTimeout(()=>app.quit(),300);return {started:true};}
   catch(error){await fetch(url+'/api/update-invitations/launch-failed',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({id})});throw Error('更新器未启动，客户端保持运行，请手动检查日志');}finally{fs.closeSync(fd)}
  });
+ ipcMain.handle('effect-play',(event,payload)=>{if(![...pets.values(),...histories.values(),friendWindow].some(w=>w&&!w.isDestroyed()&&w.webContents===event.sender))throw Error('请从聊天窗口播放特效');return effectPlayer.play(event.sender,payload)});
+ ipcMain.on('effect-cancel',event=>effectPlayer.cancel(event.sender));
+ ipcMain.handle('effect-payload',event=>effectPlayer.payload(event.sender));
+ ipcMain.on('effect-ready',event=>effectPlayer.ready(event.sender));
+ ipcMain.on('effect-close',(event,error)=>effectPlayer.close(event.sender,error));
  ipcMain.on('open-friend',(_event,peer)=>openFriend(peer));
  ipcMain.on('peer-read',async(event,peer)=>{if(!friendWindow||event.sender!==friendWindow.webContents||!friendWindow.isVisible()||!friendWindow.isFocused()||peer!==friendPeer)return;try{await fetch(url+'/api/conversations/read',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({peer})})}catch(error){lifecycleLog('peer-read-failed',error.message)}});
  ipcMain.on('friend-read',async(event,{peer,id}={})=>{if(!friendWindow||event.sender!==friendWindow.webContents||!friendWindow.isVisible()||!friendWindow.isFocused()||peer!==friendPeer)return;try{await fetch(url+'/api/cloud/direct-read',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({to:peer,id})})}catch(error){lifecycleLog('friend-read-failed',error.message)}});
@@ -162,6 +169,6 @@ app.whenReady().then(async()=>{
  disposeRecovery=installDesktopRecovery({powerMonitor,screen,windows:()=>recoveryWindows({hidden:ui.hidden,setup,pets:[...pets.values()],visitors:Array.from(visitors.values(),v=>v.win),histories:[...histories.values(),...(friendWindow?[friendWindow]:[])]}),isQuitting:()=>quitting,log:lifecycleLog});
 }).catch(e=>{console.error(e);app.quit()});
 app.on('window-all-closed',()=>{});
-app.on('before-quit',()=>{lifecycleLog('before-quit');quitting=true;disposeRecovery?.();clearInterval(visitorTimer);service?.kill()});
+app.on('before-quit',()=>{lifecycleLog('before-quit');quitting=true;effectPlayer.dispose();disposeRecovery?.();clearInterval(visitorTimer);service?.kill()});
 
 }

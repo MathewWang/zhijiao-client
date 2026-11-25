@@ -153,7 +153,7 @@ const server=http.createServer(async(req,res)=>{
  const sender=agentBy(cloud.config?.localAgentId),recipient=cloud.state.directory.find(d=>d.id===b.to);
  const asset=skin=>{const c=presets.find(c=>c.id===skin)||presets[0];return 'data:image/png;base64,'+readFileSync(join(root,'public',c.image)).toString('base64');};
  if(local)interactions.markDraft(local.id,'previewed');
- return send(res,200,{html:wrapPresentation(plan.artifact.html,{message:plan.intent.message,assets:{sender:asset(sender.skin),recipient:asset(recipient?.profile?.skin)}})});}
+ return send(res,200,{duration:plan.presentation.durationSeconds,html:wrapPresentation(plan.artifact.html,{message:plan.intent.message,assets:{sender:asset(sender.skin),recipient:asset(recipient?.profile?.skin)}})});}
  if(p==='/api/interactions/draft-send'){const d=interactions.localDraft(b.id);if(d.sent)return send(res,200,{ok:true});if(!d.previewed)throw Error('请先查看效果');if(!cloud.client||!cloud.state.friends.includes(d.peer))throw Error('请先连接好友');await cloud.client.api('/v1/interactions',{to:d.peer,key:d.id,plan:normalizePlan(d.plan)});interactions.markDraft(d.id,'sent');await cloud.poll();return send(res,200,{ok:true})}
  if(p==='/api/interactions/send'){if(!cloud.client)throw Error('请先连接云端');await cloud.client.api('/v1/interactions',{to:b.to,key:b.key,plan:normalizePlan(b.plan)});await cloud.poll();return send(res,200,{ok:true});}
  if(p==='/api/interactions/action'){if((b.action==='repair'||b.action==='accept'&&interactions.current(b.id).plan.version!==2)&&b.confirmCost!==true)throw Error('请先确认本次创作可能消耗模型额度');await interactions.action(b);return send(res,200,{ok:true});}

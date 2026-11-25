@@ -7,7 +7,7 @@ const desktop=(window as any).desktop;
 function EffectSurface({html,onClose,onError,onReady}:{html:string;onClose:()=>void;onError:(error:string)=>void;onReady:()=>void}){
  const frame=useRef<HTMLIFrameElement>(null);
  useEffect(()=>{const handler=(e:MessageEvent)=>{if(e.source===frame.current?.contentWindow&&e.data?.type==='zhijiao.effect-close')onClose();if(e.source===frame.current?.contentWindow&&e.data?.type==='zhijiao.effect-error')onError(String(e.data.error||'播放失败').slice(0,600))};const key=(e:KeyboardEvent)=>{if(e.key==='Escape')onClose()};window.addEventListener('message',handler);window.addEventListener('keydown',key);return()=>{window.removeEventListener('message',handler);window.removeEventListener('keydown',key)}},[onClose,onError]);
- return <div className="effect-surface" role="dialog" aria-modal="true" aria-label="沉浸式特效"><iframe ref={frame} title="隔离的互动效果" sandbox="allow-scripts" referrerPolicy="no-referrer" srcDoc={html} onLoad={()=>{frame.current?.contentWindow?.postMessage({type:'zhijiao.check-errors'},'*');onReady()}}/><button className="effect-close" aria-label="关闭特效" title="关闭（Esc）" onClick={onClose}><X size={22}/></button></div>
+ return <div className="effect-surface" role="dialog" aria-modal="true" aria-label="沉浸式特效"><iframe ref={frame} title="隔离的互动效果" sandbox="allow-scripts" referrerPolicy="no-referrer" srcDoc={html} onLoad={()=>{frame.current?.contentWindow?.postMessage({type:'zhijiao.check-errors'},'*');onReady()}}/><button className="effect-close" aria-label="关闭特效" title="关闭（Esc）" onClick={onClose}><X size={18}/><span>关闭</span></button></div>
 }
 export function EffectStage(){
  const [payload,setPayload]=useState<{html:string;duration:number}>();

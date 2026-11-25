@@ -181,6 +181,14 @@ const server=http.createServer(async(req,res)=>{
  if(p==='/api/interactions/draft-send'){const d=interactions.localDraft(b.id);if(d.sent)return send(res,200,{ok:true});if(!d.previewed)throw Error('请先查看效果');if(!cloud.client||!cloud.state.friends.includes(d.peer))throw Error('请先连接好友');await cloud.client.api('/v1/interactions',{to:d.peer,key:d.id,plan:normalizePlan(d.plan)});interactions.markDraft(d.id,'sent');await cloud.poll();return send(res,200,{ok:true})}
  if(p==='/api/interactions/send'){if(!cloud.client)throw Error('请先连接云端');await cloud.client.api('/v1/interactions',{to:b.to,key:b.key,plan:normalizePlan(b.plan)});await cloud.poll();return send(res,200,{ok:true});}
  if(p==='/api/interactions/action'){if((b.action==='repair'||b.action==='accept'&&interactions.current(b.id).plan.version!==2)&&b.confirmCost!==true)throw Error('请先确认本次创作可能消耗模型额度');await interactions.action(b);return send(res,200,{ok:true});}
+ if(p==='/api/onboarding/cloud'){
+  if(!state.registrationComplete||state.cloudOnboarding!=='pending')throw Error('当前无需完成云端引导');
+  if(!['skip','connected'].includes(b.action))throw Error('无效引导操作');
+  if(b.action==='connected'&&!cloud.state.registered)throw Error('请先连接云端');
+  state.cloudOnboarding=b.action==='skip'?'skipped':'connected';
+  if(b.action==='skip')addMessage(state.primaryAgentId,'assistant','你已跳过云端连接，目前可以在本机使用。以后点击人物 → 右上角设置 → 填写邀请码并连接云端，就能添加好友、聊天和串门。');
+  persist();return send(res,200,{ok:true});
+ }
  if(p==='/api/cloud/connect'){await cloud.connect(b);return send(res,200,{ok:true});}
  if(p.startsWith('/api/cloud/')){await cloud.action(p.slice('/api/cloud/'.length),b);return send(res,200,{ok:true});}
  if(p==='/api/register'||p==='/api/register-batch'){
@@ -197,7 +205,7 @@ const server=http.createServer(async(req,res)=>{
  const failures=checks.map((r,i)=>r.status==='rejected'?`${created[i].name}：${r.reason.message}`:null).filter(Boolean);
  if(failures.length)throw Error(failures.join('；'));
  for(const a of created)a.verifiedAt=Date.now();
- state.agents.push(...created);state.primaryAgentId=created[0].id;state.registrationComplete=true;
+ state.agents.push(...created);state.primaryAgentId=created[0].id;state.registrationComplete=true;state.cloudOnboarding='pending';
  addMessage(created[0].id,'assistant',`${created[0].ownerName}, 我是${created[0].name}。我已经准备好了。你可以先和我聊聊，再到设置中完善资料。`);
  persist();
  }finally{registrationBusy=false;}

@@ -5,6 +5,7 @@ import {tmpdir} from 'node:os';
 import {join} from 'node:path';
 import {spawn} from 'node:child_process';
 import net from 'node:net';
+import {DatabaseSync} from 'node:sqlite';
 import {setTimeout as delay} from 'node:timers/promises';
 test('single-agent registration needs explicit consents, verifies once and persists one owner',async()=>{
  const dir=mkdtempSync(join(tmpdir(),'single-registration-'));const bin=join(dir,'bin');mkdirSync(bin);
@@ -24,7 +25,7 @@ test('single-agent registration needs explicit consents, verifies once and persi
   assert.equal((await post({agent:{...agent,publishProfile:false},verifyConnection:true})).status,400);assert.equal(existsSync(marker),false);
   assert.equal((await post({verifyConnection:true})).status,400);
   const result=await post({agent,verifyConnection:true});assert.equal(result.status,200,JSON.stringify(result.body));
-  const state=await (await fetch(url+'/api/state')).json();assert.equal(state.agents.length,1);assert.equal(state.registrationComplete,true);assert.equal(state.primaryAgentId,state.agents[0].id);assert.equal(state.agents[0].autoAcceptFriends,false);assert.ok(state.agents[0].verifiedAt);assert.equal(state.links.length,0);
+  const state=await (await fetch(url+'/api/state')).json();assert.equal(state.agents.length,1);assert.equal(state.registrationComplete,true);assert.equal(state.cloudOnboarding,'pending');assert.equal(state.primaryAgentId,state.agents[0].id);assert.equal(state.agents[0].autoAcceptFriends,false);assert.ok(state.agents[0].verifiedAt);assert.equal(state.links.length,0);
   assert.equal((await post({agent,verifyConnection:true})).status,400);assert.equal(readFileSync(marker,'utf8'),'call\n');
   const change=async data=>fetch(url+'/api/engine',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({id:state.agents[0].id,...data})});
   assert.equal((await change({engine:'trae'})).status,400);
@@ -33,5 +34,15 @@ test('single-agent registration needs explicit consents, verifies once and persi
   assert.equal((await change({engine:'trae',verifyConnection:true})).status,200);
   const switched=await (await fetch(url+'/api/state')).json();
   assert.equal(switched.agents[0].engine,'trae');assert.equal(switched.agents[0].id,state.agents[0].id);assert.equal(switched.agents[0].ownerId,state.agents[0].ownerId);assert.deepEqual(switched.messages,state.messages);assert.deepEqual(switched.links,state.links);
+  const onboarding=async(path,body)=>fetch(url+'/api/'+path,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(body)});
+  assert.equal((await onboarding('onboarding/cloud',{action:'connected'})).status,400);
+  assert.equal((await onboarding('cloud/connect',{agentId:state.primaryAgentId,deviceName:'test',publishProfile:true})).status,400);
+  assert.equal((await (await fetch(url+'/api/state')).json()).cloudOnboarding,'pending');
+  const persisted=()=>{const db=new DatabaseSync(join(dir,'data','companion.sqlite'));try{return JSON.parse(db.prepare('SELECT json FROM state WHERE id=1').get().json)}finally{db.close()}};
+  assert.equal(persisted().cloudOnboarding,'pending');
+  assert.equal((await onboarding('onboarding/cloud',{action:'skip'})).status,200);
+  const skipped=persisted();assert.equal(skipped.cloudOnboarding,'skipped');assert.equal(skipped.agents[0].id,state.primaryAgentId);assert.ok(skipped.messages.some(m=>m.text.includes('你已跳过云端连接')&&m.text.includes('设置')));
+  assert.equal((await onboarding('onboarding/cloud',{action:'skip'})).status,400);
+
  }finally{const exited=new Promise(r=>child.once('exit',r));child.kill();await exited;rmSync(dir,{recursive:true,force:true});}
 });

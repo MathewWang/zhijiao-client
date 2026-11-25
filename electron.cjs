@@ -127,13 +127,13 @@ app.whenReady().then(async()=>{
  await ready();lifecycleLog('desktop-started',String(process.pid));
  ({desktopVisitors:pickVisitors}=await import('./shared/desktop-visitors.mjs'));
  const state=await (await fetch(url+'/api/state')).json();updateInbox(state);
- if(state.registrationComplete===false){
+ if(state.registrationComplete===false||state.cloudOnboarding==='pending'){
   setup=new BrowserWindow({width:1000,height:820,minWidth:760,minHeight:650,title:'知交信使 · 注册助理',backgroundColor:'#151719',webPreferences:preferences});
   setup.loadURL(url+'/?register=1');setup.webContents.setWindowOpenHandler(()=>({action:'deny'}));
   setup.on('closed',()=>{setup=null;if(!pets.size)app.quit()});
  }else createPets(state.agents);
  ipcMain.handle('open-visit-link',async(_event,value)=>{if(typeof value!=='string'||value.length>2000)throw Error('Invalid link');const target=new URL(value);if(target.protocol!=='https:'||target.username||target.password)throw Error('Only HTTPS links are supported');await shell.openExternal(target.href)});
- ipcMain.handle('finish-registration',async()=>{const current=await (await fetch(url+'/api/state')).json();if(!current.registrationComplete)throw Error('请先完成注册');createPets(current.agents);setup?.close()});
+ ipcMain.handle('finish-registration',async()=>{const current=await (await fetch(url+'/api/state')).json();if(!current.registrationComplete||current.cloudOnboarding==='pending')throw Error('请先连接云端或选择暂时跳过');createPets(current.agents);setup?.close()});
  ipcMain.handle('approve-client-update',async(e,{id,confirm}={})=>{
   const win=BrowserWindow.fromWebContents(e.sender);if(confirm!==true||!win?.isVisible()||!win.isFocused()||![...pets.values(),friendWindow].includes(win)||typeof id!=='string'||!/^[-a-zA-Z0-9]+$/.test(id))throw Error('请由主人在桌面确认升级');
   if(!service||service.killed)throw Error('本机服务由其他进程启动，请先停止单独的 npm start，再重开桌面客户端后升级');

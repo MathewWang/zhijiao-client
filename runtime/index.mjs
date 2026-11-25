@@ -1,3 +1,4 @@
+import {peerUnread,markPeerActivities} from '../shared/conversations.mjs';
 import {pinOfficialUpdate,saveUpdateJob,flushUpdateReceipts} from './client-updater.mjs';
 import {InteractionRuntime,PLAY_CATALOG,wrapPresentation} from './interaction-runtime.mjs';
 import {normalizePlan} from '../shared/interactions.mjs';
@@ -38,7 +39,7 @@ const updateJobsDir=join(root,'.data','update-jobs');
 const updateInfo={currentVersion:JSON.parse(readFileSync(join(root,'package.json'),'utf8')).version,latestVersion:null,lastCheckedAt:null,error:''};
 let checkingUpdates=false;
 async function checkUpdates(){if(checkingUpdates)return;checkingUpdates=true;try{const release=await fetchRelease();updateInfo.latestVersion=release.version;updateInfo.lastCheckedAt=Date.now();updateInfo.error='';if(notifyRelease(state,release,updateInfo.currentVersion,addMessage))persist();else notify();}catch{updateInfo.error='暂时无法检查更新，稍后会自动重试';notify();}finally{checkingUpdates=false;}}
-const snapshot=()=>{if(expireVisits(state.visits))save();return ({...state,updates:updateInfo,updatePreparing,playTemplates:interactions?.templates()||[],interactionEffects:interactions?.snapshot()||[],playCatalog:PLAY_CATALOG,cloud:cloud?.snapshot(),engines,presets,directory:state.agents.filter(a=>a.public!==false).map(publicCard),busy:[...jobs.keys()]})};
+const snapshot=()=>{if(expireVisits(state.visits))save();const conversationState={cloud:cloud?.snapshot(),localPlayDrafts:interactions?.drafts()||[]};return ({...state,peerUnread:peerUnread(conversationState,state.peerSeen||{}),updates:updateInfo,updatePreparing,playTemplates:interactions?.templates()||[],localPlayDrafts:interactions?.drafts()||[],interactionEffects:interactions?.snapshot()||[],playCatalog:PLAY_CATALOG,cloud:cloud?.snapshot(),engines,presets,directory:state.agents.filter(a=>a.public!==false).map(publicCard),busy:[...jobs.keys()]})};
 function notify(){for(const c of clients)c.write(`data: ${JSON.stringify(snapshot())}\n\n`)}
 function persist(){save();notify()}
 function addMessage(agentId,role,text,extra={}){const m={id:randomUUID(),agentId,role,text,createdAt:Date.now(),...extra};state.messages.push(m);return m}
@@ -102,15 +103,10 @@ const port=Number(process.env.PORT||4317);const origin=`http://127.0.0.1:${port}
 const vite=process.env.COMPANION_DEV!=='1'&&existsSync(join(root,'dist/index.html'))?null:await (await import('vite')).createServer({root,server:{middlewareMode:true,host:'127.0.0.1'},appType:'spa'});
 async function body(req){let str='';for await(const c of req){str+=c;if(Buffer.byteLength(str)>262144)throw Error('内容过长')}return JSON.parse(str||'{}')}
 function send(res,code,data){res.writeHead(code,{'Content-Type':'application/json'});res.end(JSON.stringify(data))}
-cloud=new DesktopCloud({dir:resolve(process.env.CLIENT_DATA_DIR||(process.env.COMPANION_DATA_DIR?join(dataDir,'cloud-client'):join(root,'.data/client'))),getAgent:id=>state.agents.find(a=>a.id===id),isPaused:()=>updatePreparing,onChange:()=>{reportUpdateInvitations();notify();if(interactions){interactions.reports();void interactions.flush();}},onOwnerEvent:({key,agentId,text,messageId,status,ownerConfirmed,role='assistant',reportKind})=>{if(!state.agents.some(a=>a.id===agentId))return false;if(!state.messages.some(m=>m.cloudEventKey===key)){addMessage(agentId,role,text,{status:'done',...(reportKind==='receipt'?{channel:'agent-detail'}:{}),cloudReportKind:reportKind,cloudEventKey:key,cloudMessageId:messageId,cloudStatus:status,cloudOwnerConfirmed:ownerConfirmed});persist();}return true;}});
-function reportUpdateInvitations(){
- const c=cloud?.snapshot(),a=state.agents.find(a=>a.id===c?.agentId);if(!a)return;
- const labels={pending:'邀请你更新客户端，等待你同意',accepted:'已获主人同意，正在更新',completed:'已更新并启动客户端',failed:'更新未完成，请由主人检查',declined:'主人暂未同意升级',cancelled:'邀请已撤回',expired:'邀请已过期'};
- let changed=false;for(const i of c.updateInvitations||[]){const key=i.id+':'+i.status;if(state.messages.some(m=>m.updateInvitationEvent===key))continue;const peer=c.directory.find(d=>d.id===(i.to===c.deviceId?i.from:i.to));addMessage(a.id,'assistant',`${peer?.profile?.name||peer?.name||'好友'}的升级邀请 · ${i.targetVersion}：${labels[i.status]||i.status}${i.status==='pending'&&i.note?'\n对方留言：'+i.note:''}`,{updateInvitationId:i.id,updateInvitationEvent:key});changed=true}if(changed)save();
-}
+cloud=new DesktopCloud({dir:resolve(process.env.CLIENT_DATA_DIR||(process.env.COMPANION_DATA_DIR?join(dataDir,'cloud-client'):join(root,'.data/client'))),getAgent:id=>state.agents.find(a=>a.id===id),isPaused:()=>updatePreparing,onChange:()=>{notify();if(interactions){interactions.reports();void interactions.flush();}},onOwnerEvent:({key,agentId,text,messageId,status,ownerConfirmed,role='assistant',reportKind})=>{if(reportKind!=='owner')return true;if(!state.agents.some(a=>a.id===agentId))return false;if(!state.messages.some(m=>m.cloudEventKey===key)){addMessage(agentId,role,text,{status:'done',...(reportKind!=='owner'?{channel:'friend-event'}:{}),cloudReportKind:reportKind,cloudEventKey:key,cloudMessageId:messageId,cloudStatus:status,cloudOwnerConfirmed:ownerConfirmed});persist();}return true;}});
 function assertUpdateIdle(){if(jobs.size||interactions.jobs.size||cloud.processing||cloud.state.messages.some(m=>m.status==='drafting')||interactions.snapshot().some(e=>['generating','playing'].includes(e.status))||cloud.state.interactions?.some(i=>i.to===cloud.config?.id&&['playing','accepted'].includes(i.status))||cloud.state.visits?.some(v=>v.status==='active'))throw Error('有任务、播放或串门正在进行，请结束后再升级')}
 const cloudTimer=setInterval(()=>void cloud.poll(),5000);cloudTimer.unref();
-interactions=new InteractionRuntime({dbPath:join(dataDir,'interactions.sqlite'),cloud,getAgent:()=>state.agents.find(a=>a.id===cloud.config?.localAgentId),dataDir,onChange:notify,onReport:({key,text,interactionId})=>{const a=state.agents.find(a=>a.id===cloud.config?.localAgentId);if(!a)return false;if(!state.messages.some(m=>m.interactionEventKey===key)){addMessage(a.id,'assistant',text,{interactionId,interactionEventKey:key});persist();}return true;}});
+interactions=new InteractionRuntime({dbPath:join(dataDir,'interactions.sqlite'),cloud,getAgent:()=>state.agents.find(a=>a.id===cloud.config?.localAgentId),dataDir,onChange:notify});
 void cloud.start();
 const updateStartup=setTimeout(()=>void checkUpdates(),10000);updateStartup.unref();
 const updateReceiptTimer=setInterval(()=>void flushUpdateReceipts(updateJobsDir),30000);updateReceiptTimer.unref();void flushUpdateReceipts(updateJobsDir);
@@ -128,7 +124,7 @@ const server=http.createServer(async(req,res)=>{
  if(url.pathname==='/api/interactions/artifact'&&req.method==='GET'){
  const id=url.searchParams.get('id');const item=interactions.current(id);const sender=cloud.state.directory.find(d=>d.id===item.from);const recipient=state.agents.find(a=>a.id===cloud.config.localAgentId);
  const asset=skin=>{const c=presets.find(c=>c.id===skin)||presets[0];return 'data:image/png;base64,'+readFileSync(join(root,'public',c.image)).toString('base64');};
- return send(res,200,{html:interactions.artifact(id,{sender:asset(sender?.profile?.skin),recipient:asset(recipient?.skin)})});}
+ return send(res,200,{html:interactions.artifact(id,{sender:asset(sender?.profile?.skin),recipient:asset(recipient?.skin)},url.searchParams.get('replay')==='1')});}
  if(req.method!=='POST')return send(res,405,{error:'不支持的方法'});
  const b=await body(req);const p=url.pathname;
  if(updatePreparing&&!p.startsWith('/api/update-invitations/'))throw Error('客户端正在准备升级，请稍后再试');
@@ -144,13 +140,21 @@ const server=http.createServer(async(req,res)=>{
  if(p==='/api/updates/check'){await checkUpdates();return send(res,200,updateInfo);}
  if(p==='/api/interactions/templates-save')return send(res,200,interactions.saveTemplate(b));
  if(p==='/api/interactions/templates-delete')return send(res,200,interactions.deleteTemplate(b.id));
+ if(p==='/api/conversations/read'){if(typeof b.peer!=='string'||!cloud.state.directory.some(d=>d.id===b.peer))throw Error('好友不存在');state.peerSeen=markPeerActivities({cloud:cloud.snapshot(),localPlayDrafts:interactions.drafts()},state.peerSeen||{},b.peer);persist();return send(res,200,{ok:true})}
+ if(p==='/api/interactions/create-local'||p==='/api/interactions/retry-local'){
+ if(b.confirmCost!==true)throw Error('请先确认本次模型生成');const a=agentBy(cloud.config?.localAgentId);if(!a.enabled||jobs.has(a.id)||interactions.jobs.size)throw Error('助理正在忙或休息中');
+ const old=p.endsWith('retry-local')?interactions.localDraft(b.id):null;const to=old?.peer||b.to;if(!cloud.state.friends.includes(to))throw Error('请先选择好友');
+ const request=old?interactions.restartDraft(old.id):{kind:b.kind,title:b.title,message:b.message,brief:b.brief};const id=old?.id||interactions.beginDraft(to,request),controller=new AbortController();jobs.set(a.id,controller);notify();
+ void interactions.draft(request,controller.signal).then(plan=>interactions.finishDraft(id,plan)).catch(error=>interactions.finishDraft(id,null,error.message)).finally(()=>{jobs.delete(a.id);notify()});return send(res,202,{id});}
  if(p==='/api/interactions/draft'){
- if(b.confirmCost!==true)throw Error('请先确认本次模型生成');const a=agentBy(cloud.config?.localAgentId);if(jobs.has(a.id)||interactions.jobs.size)throw Error('助理正在忙');const c=new AbortController();jobs.set(a.id,c);notify();try{return send(res,200,{plan:await interactions.draft(b,c.signal)});}finally{jobs.delete(a.id);notify();}}
+ if(b.to&&!cloud.state.friends.includes(b.to))throw Error('请先选择好友');if(b.confirmCost!==true)throw Error('请先确认本次模型生成');const a=agentBy(cloud.config?.localAgentId);if(jobs.has(a.id)||interactions.jobs.size)throw Error('助理正在忙');const c=new AbortController();jobs.set(a.id,c);notify();try{const plan=await interactions.draft(b,c.signal);const draftId=b.to?interactions.saveDraft(b.to,plan):undefined;return send(res,200,{plan,draftId});}finally{jobs.delete(a.id);notify();}}
  if(p==='/api/interactions/preview'){
- const plan=normalizePlan(b.plan);if(plan.version!==2)throw Error('请先制作效果');
+ const local=b.draftId?interactions.localDraft(b.draftId):null;if(local)b.to=local.peer;const plan=normalizePlan(local?.plan||b.plan);if(plan.version!==2)throw Error('请先制作效果');
  const sender=agentBy(cloud.config?.localAgentId),recipient=cloud.state.directory.find(d=>d.id===b.to);
  const asset=skin=>{const c=presets.find(c=>c.id===skin)||presets[0];return 'data:image/png;base64,'+readFileSync(join(root,'public',c.image)).toString('base64');};
+ if(local)interactions.markDraft(local.id,'previewed');
  return send(res,200,{html:wrapPresentation(plan.artifact.html,{message:plan.intent.message,assets:{sender:asset(sender.skin),recipient:asset(recipient?.profile?.skin)}})});}
+ if(p==='/api/interactions/draft-send'){const d=interactions.localDraft(b.id);if(d.sent)return send(res,200,{ok:true});if(!d.previewed)throw Error('请先查看效果');if(!cloud.client||!cloud.state.friends.includes(d.peer))throw Error('请先连接好友');await cloud.client.api('/v1/interactions',{to:d.peer,key:d.id,plan:normalizePlan(d.plan)});interactions.markDraft(d.id,'sent');await cloud.poll();return send(res,200,{ok:true})}
  if(p==='/api/interactions/send'){if(!cloud.client)throw Error('请先连接云端');await cloud.client.api('/v1/interactions',{to:b.to,key:b.key,plan:normalizePlan(b.plan)});await cloud.poll();return send(res,200,{ok:true});}
  if(p==='/api/interactions/action'){if((b.action==='repair'||b.action==='accept'&&interactions.current(b.id).plan.version!==2)&&b.confirmCost!==true)throw Error('请先确认本次创作可能消耗模型额度');await interactions.action(b);return send(res,200,{ok:true});}
  if(p==='/api/cloud/connect'){await cloud.connect(b);return send(res,200,{ok:true});}
@@ -227,6 +231,6 @@ const server=http.createServer(async(req,res)=>{
 });
 server.listen(port,'127.0.0.1',()=>{console.log(`Companion ready: ${origin}`);for(const a of state.agents){processInvites(a.id);drain(a.id)}});
 setInterval(()=>{for(const c of clients)c.write(': keepalive\n\n')},20000).unref();
-for(const sig of ['SIGTERM','SIGINT'])process.on(sig,async()=>{clearInterval(cloudTimer);clearInterval(updateTimer);clearInterval(updateReceiptTimer);clearTimeout(updateStartup);for(const c of jobs.values())c.abort();server.close();await interactions.close();await cloud.close();db.close();process.exit()});
+for(const sig of ['SIGTERM','SIGINT'])process.on(sig,async()=>{clearInterval(cloudTimer);clearInterval(updateTimer);clearInterval(updateReceiptTimer);clearTimeout(updateStartup);for(const c of jobs.values())c.abort();server.close();while(jobs.size)await new Promise(resolve=>setTimeout(resolve,30));await interactions.close();await cloud.close();db.close();process.exit()});
 
 const visitExpiry=setInterval(()=>{if(expireVisits(state.visits))persist()},5000);visitExpiry.unref();

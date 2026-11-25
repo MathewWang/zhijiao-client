@@ -15,7 +15,7 @@ export class DesktopCloud {
    if(c.localAgentId){this.config=c;this.state.registered=true;this.state.deviceId=c.id;this.state.agentId=c.localAgentId;}
   }
  }
- snapshot(){return this.state;}
+ snapshot(){return {...this.state,interactions:this.state.interactions.map(i=>{const {artifact,...plan}=i.plan;return {...i,plan}})};}
  publish(patch){Object.assign(this.state,patch);this.onChange();}
  save(){writeFileSync(this.path,JSON.stringify(this.config,null,2),{mode:0o600});}
  async connect({agentId,relay='https://agentmen.cn',deviceName,inviteToken,publishProfile}){
@@ -52,6 +52,7 @@ export class DesktopCloud {
    this.fd=openSync(this.lock,'wx',0o600);
    this.client=new MessengerClient({config:this.config,dbPath:join(this.dir,'client.sqlite'),dataDir:this.dir,agentRunner:this.agentRunner,requireOwnerApproval:true});
   }catch(e){this.publish({error:e.code==='EEXIST'?'Client 数据目录被其他进程占用':e.message});return;}
+  this.publish(this.rememberSocial());this.refreshMessages();
   await this.poll();
  }
  async poll(){
@@ -62,17 +63,24 @@ export class DesktopCloud {
    const card=JSON.stringify(this.profile(agent));
    if(card!==this.profileJSON){await this.client.api('/v1/profile',{profile:JSON.parse(card),publishProfile:true});this.profileJSON=card;this.save();}
    const data=await this.client.api('/v1/sync',{online:agent.enabled,interactionProtocol:2,updateProtocol:1,directProtocol:1});
-   this.publish({...data,connected:true,error:''});
+   this.publish({...data,...this.rememberSocial(data),connected:true,error:''});
    if(!this.processing&&!this.isPaused()){
     this.processing=this.client.tick(this.abort.signal).catch(e=>this.publish({error:e.message})).finally(()=>{this.processing=null;if(!this.closed)this.refreshMessages();});
    }
    this.refreshMessages();
   }catch(e){this.publish({connected:false,error:e.message});}finally{this.polling=false;}
  }
+ rememberSocial(data={}){
+  const db=this.client.db;db.exec('CREATE TABLE IF NOT EXISTS social_history(kind TEXT NOT NULL,id TEXT NOT NULL,json TEXT NOT NULL,PRIMARY KEY(kind,id))');const result={};
+  const save=db.prepare('INSERT OR REPLACE INTO social_history VALUES(?,?,?)');
+  for(const kind of ['visits','interactions','updateInvitations']){for(const item of data[kind]||[])save.run(kind,item.id,JSON.stringify(item));result[kind]=db.prepare('SELECT json FROM social_history WHERE kind=? ORDER BY rowid').all(kind).map(row=>{const item=JSON.parse(row.json);if(item.expiresAt&&item.expiresAt<Date.now()&&['pending','active','accepted','ready','playing','failed'].includes(item.status)){item.status='expired';item.endedAt=item.expiresAt;}return item})}
+  return result;
+ }
  refreshMessages(){
   if(this.closed||!this.client)return;
-  const incoming=this.client.db.prepare("SELECT id,json,status,error,result FROM inbox WHERE status IN ('waiting_owner','drafting','ready') OR rowid IN (SELECT rowid FROM inbox ORDER BY rowid DESC LIMIT 50) ORDER BY rowid DESC").all().map(r=>({...r,message:JSON.parse(r.json),json:undefined}));
-  this.publish({messages:incoming.filter(r=>r.message.kind!=='direct'),direct:this.client.directSnapshot()});
+  const incoming=this.client.db.prepare('SELECT id,json,status,error,result FROM inbox ORDER BY rowid').all().map(r=>({...r,message:{...JSON.parse(r.json),createdAt:JSON.parse(r.json).created_at||JSON.parse(r.json).createdAt||0},json:undefined}));
+  const agentOutgoing=this.client.db.prepare('SELECT key,json,delivered FROM outbox ORDER BY rowid').all().map(r=>{const m=JSON.parse(r.json);return {id:r.key,peer:m.to,text:m.text,kind:m.kind,createdAt:m.createdAt||0,status:r.delivered?'sent':'queued'}}).filter(m=>m.kind==='question');
+  this.publish({messages:incoming.filter(r=>r.message.kind!=='direct'),agentOutgoing,direct:this.client.directSnapshot()});
   this.reportOwner();
  }
  reportOwner(){

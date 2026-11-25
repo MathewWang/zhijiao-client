@@ -1,5 +1,5 @@
 // Desktop read cursors are independent of task acceptance and model execution.
-function conversation(state,id){return (state.messages||[]).filter(m=>m.agentId===id&&!m.channel&&['assistant','error'].includes(m.role))}
+function conversation(state,id){return (state.messages||[]).filter(m=>m.agentId===id&&!m.channel&&!m.interactionId&&!m.updateInvitationId&&!(m.cloudMessageId&&m.role!=='user')&&(!m.cloudReportKind||m.cloudReportKind==='owner')&&['assistant','system','error'].includes(m.role))}
 function summarizeInbox(state,seen={}){
  const agents=(state.agents||[]).map(agent=>{
   const messages=conversation(state,agent.id),cursor=messages.findIndex(m=>m.id===seen[agent.id]);
@@ -11,10 +11,11 @@ function summarizeInbox(state,seen={}){
   const updates=(cloud?.updateInvitations||[]).filter(i=>i.to===self&&i.status==='pending').length;
   const requests=(cloud?.requests||[]).filter(r=>r.recipient===self&&r.status==='pending').length;
   const direct=Object.values(cloud?.direct?.unread||{}).reduce((sum,n)=>sum+n,0);
-  return {direct,id:agent.id,name:agent.name,unread,confirmations,messages:Math.max(unread,confirmations),interactions,visits,updates,plays:interactions+visits,requests};
+  const peerMessages=cloud?Object.values(state.peerUnread||{}).reduce((sum,n)=>sum+n,0):0;
+  return {peerMessages,direct,id:agent.id,name:agent.name,unread,confirmations,messages:state.peerUnread?unread:Math.max(unread,confirmations),interactions,visits,updates,plays:interactions+visits,requests};
  });
  const sum=key=>agents.reduce((n,a)=>n+a[key],0);
- return {agents,direct:sum('direct'),messages:sum('messages'),plays:sum('plays'),requests:sum('requests'),updates:sum('updates'),total:sum('direct')+sum('messages')+sum('plays')+sum('requests')+sum('updates')};
+ return {agents,peerMessages:sum('peerMessages'),direct:sum('direct'),messages:sum('messages'),plays:sum('plays'),requests:sum('requests'),updates:sum('updates'),total:state.peerUnread?sum('peerMessages')+sum('messages')+sum('requests'):sum('direct')+sum('messages')+sum('plays')+sum('requests')+sum('updates')};
 }
 function markConversationRead(state,seen,id,lastId){
  const messages=conversation(state,id),next=messages.findIndex(m=>m.id===lastId),previous=messages.findIndex(m=>m.id===seen[id]);

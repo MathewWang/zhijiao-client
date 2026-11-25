@@ -14,6 +14,9 @@ export class InteractionRuntime{
  constructor({dbPath,cloud,getAgent,dataDir,onChange=()=>{},onReport=()=>{},runner=runAgent}){
   Object.assign(this,{cloud,getAgent,dataDir,onChange,onReport,runner});this.jobs=new Map();this.flushing=false;
   this.db=new DatabaseSync(dbPath);this.db.exec("PRAGMA journal_mode=WAL; CREATE TABLE IF NOT EXISTS effects(id TEXT PRIMARY KEY,attempt INTEGER NOT NULL,status TEXT NOT NULL,html TEXT,error TEXT,pending TEXT); CREATE TABLE IF NOT EXISTS effect_reports(key TEXT PRIMARY KEY)");
+  this.db.exec("CREATE TABLE IF NOT EXISTS local_play_drafts(id TEXT PRIMARY KEY,owner TEXT NOT NULL,peer TEXT NOT NULL,created_at INTEGER NOT NULL,plan TEXT NOT NULL,previewed INTEGER NOT NULL DEFAULT 0,sent INTEGER NOT NULL DEFAULT 0)");
+  for(const [name,type] of [['status',"TEXT NOT NULL DEFAULT 'ready'"],['error','TEXT'],['request','TEXT']])if(!this.db.prepare('PRAGMA table_info(local_play_drafts)').all().some(c=>c.name===name))this.db.exec('ALTER TABLE local_play_drafts ADD COLUMN '+name+' '+type);
+  this.db.prepare("UPDATE local_play_drafts SET status='failed',error='制作被中断，请确认后重新制作' WHERE status='generating'").run();
   initPlayTemplates(this.db);
   this.db.prepare("UPDATE effects SET status='failed',error='创作中断，请由主人确认后重新生成',pending='fail' WHERE status='generating'").run();
  }
@@ -22,6 +25,13 @@ export class InteractionRuntime{
  templates(){return this.getAgent()?listPlayTemplates(this.db,this.getAgent().id):[]}
  saveTemplate(body){const owner=this.getAgent()?.id;if(!owner)throw Error('请先选择助理');const item=savePlayTemplate(this.db,owner,body);this.onChange();return item}
  deleteTemplate(id){const owner=this.getAgent()?.id;if(!owner)throw Error('请先选择助理');const result=deletePlayTemplate(this.db,owner,id);this.onChange();return result}
+ drafts(){return this.db.prepare('SELECT * FROM local_play_drafts WHERE owner=? ORDER BY created_at').all(this.getAgent()?.id||'').map(d=>{const plan=JSON.parse(d.plan),request=JSON.parse(d.request||'{}'),intent=plan.intent||request;return {id:d.id,peer:d.peer,createdAt:d.created_at,title:intent.title||PLAY_CATALOG.find(p=>p.id===intent.kind)?.name||'互动',message:intent.message||'',status:d.sent?'sent':d.status,error:d.error,previewed:!!d.previewed,sent:!!d.sent}})}
+ beginDraft(peer,request){const id=crypto.randomUUID();this.db.prepare("INSERT INTO local_play_drafts(id,owner,peer,created_at,plan,status,request) VALUES(?,?,?,?,'{}','generating',?)").run(id,this.getAgent().id,peer,Date.now(),JSON.stringify(request));this.onChange();return id}
+ finishDraft(id,plan,error){this.localDraft(id);this.db.prepare('UPDATE local_play_drafts SET plan=?,status=?,error=? WHERE id=?').run(JSON.stringify(plan?normalizePlan(plan):{}),error?'failed':'ready',error||null,id);this.onChange()}
+ restartDraft(id){const d=this.localDraft(id);if(d.status!=='failed')throw Error('只能重新制作失败的效果');this.db.prepare("UPDATE local_play_drafts SET status='generating',error=NULL WHERE id=?").run(id);this.onChange();return JSON.parse(d.request||'{}')}
+ saveDraft(peer,plan){const id=this.beginDraft(peer,plan.intent);this.finishDraft(id,plan);return id}
+ localDraft(id){const d=this.db.prepare('SELECT * FROM local_play_drafts WHERE id=? AND owner=?').get(id,this.getAgent()?.id||'');if(!d)throw Error('本机效果不存在');return {...d,plan:JSON.parse(d.plan)}}
+ markDraft(id,field){if(!['previewed','sent'].includes(field))throw Error('无效状态');this.localDraft(id);this.db.prepare('UPDATE local_play_drafts SET '+field+'=1 WHERE id=?').run(id);this.onChange()}
  async draft({kind,message,brief,title,priorPlan,revision},signal){
   const entry=PLAY_CATALOG.find(p=>p.id===kind);if(!entry)throw Error('请选择玩法');if(typeof message!=='string'||!message.trim()||message.length>500||typeof brief!=='string'||brief.length>2000)throw Error('请填写祝福语和创作要求');
   if(kind==='custom.effect'&&(typeof title!=='string'||!title.trim()||title.length>40||!brief.trim()))throw Error('请填写玩法名称和效果描述');
@@ -112,7 +122,7 @@ export class InteractionRuntime{
   }else await this.cloud.client.api('/v1/interactions/action',{id,action,attempt:i.attempt});
   await this.cloud.poll();
  }
- artifact(id,assets){const i=this.current(id);if(i.to!==this.cloud.config.id||i.status!=='playing')throw Error('请先确认播放');let row=this.db.prepare('SELECT * FROM effects WHERE id=?').get(id);if(!row&&i.plan.version===2&&i.attempt===1){const p=normalizePlan(i.plan);this.db.prepare("INSERT INTO effects(id,attempt,status,html) VALUES(?,?,'ready',?)").run(id,i.attempt,p.artifact.html);row=this.db.prepare('SELECT * FROM effects WHERE id=?').get(id);}if(row?.attempt!==i.attempt||!row.html)throw Error('展示文件不存在');return wrapPresentation(row.html,{assets,message:i.plan.intent.message});}
+ artifact(id,assets,replay=false){const i=this.current(id);if(i.to!==this.cloud.config.id||(replay?i.status!=='completed':i.status!=='playing'))throw Error('请先确认播放');let row=this.db.prepare('SELECT * FROM effects WHERE id=?').get(id);if(!row&&i.plan.version===2&&i.attempt===1){const p=normalizePlan(i.plan);this.db.prepare("INSERT INTO effects(id,attempt,status,html) VALUES(?,?,'ready',?)").run(id,i.attempt,p.artifact.html);row=this.db.prepare('SELECT * FROM effects WHERE id=?').get(id);}if(row?.attempt!==i.attempt||!row.html)throw Error('展示文件不存在');return wrapPresentation(row.html,{assets,message:i.plan.intent.message});}
  reports(){
   for(const i of this.cloud.state.interactions||[]){
    const self=this.cloud.config?.id;if(i.status==='pending'&&i.to!==self)continue;

@@ -13,7 +13,7 @@ test('all selectable characters have assets and can be registered; unknown skins
 
 test('every selectable character ships an RGBA 4-by-3 motion sheet',()=>{
  for(const preset of presets){
-  assert.equal(preset.animated,true,preset.id);assert.equal(preset.motion.columns,4);assert.equal(preset.motion.rows,3);
+  assert.equal(preset.animated,true,preset.id);assert.equal(preset.motion.columns,4);assert.equal(preset.motion.rows,3);assert.equal(preset.motion.layout,'edge-v2');assert.equal(preset.motion.frames.length,12);for(const f of preset.motion.frames){assert.ok(f.width>0&&f.height>0);assert.ok(f.x>=0&&f.y>=0);assert.ok(f.x+f.width<=preset.motion.sourceWidth&&f.y+f.height<=preset.motion.sourceHeight)};
   const file=new URL('../public'+preset.motion.sheet,import.meta.url);assert.ok(existsSync(file),preset.motion.sheet);
   const png=readFileSync(file);assert.equal(png.subarray(1,4).toString(),'PNG');assert.equal(png[25],6,'RGBA transparency channel required');
   assert.equal(png.readUInt32BE(16)/png.readUInt32BE(20),4/3,'square cells in four columns and three rows');

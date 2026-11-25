@@ -1,62 +1,16 @@
-import React,{useEffect,useRef,useState} from 'react';
+import React,{useEffect,useState} from 'react';
 import './companion-motion.css';
 import characters from '../shared/characters.json';
-export type Motion='idle'|'wave'|'sit'|'stand';
-type Phase='idle'|'wave'|'sitting-down'|'seated'|'standing-up';
-
+export type Motion='idle'|'wave'|'walk'|'peek';
 export function AnimatedCompanion({skin='taotao',sleep=false,busy=false,attention='',action,motionKey=0,onPhase}:{skin?:string;sleep?:boolean;busy?:boolean;attention?:string;action?:Motion;motionKey?:number;onPhase?:(phase:string)=>void}){
- const preset=characters.find(c=>c.id===skin)||characters[0];const SHEET=preset.motion.sheet;const name=preset.name;
- const [phase,setPhase]=useState<Phase>('idle');const [frame,setFrame]=useState(0);const [failed,setFailed]=useState(false);
- const phaseRef=useRef<Phase>('idle');const elapsed=useRef(0);const target=useRef<Motion>('idle');const timer=useRef(0);const desired=useRef<Motion>('idle');
- const change=(next:Phase)=>{phaseRef.current=next;elapsed.current=0;setFrame(next==='seated'||next==='standing-up'?11:next==='sitting-down'?8:next==='wave'?4:0);setPhase(next)};
- useEffect(()=>{setFailed(false);const img=new Image();img.src=SHEET;img.onerror=()=>setFailed(true);return()=>{img.onerror=null}},[SHEET]);
- useEffect(()=>{desired.current=action||(sleep?'sit':busy?'stand':'idle');const request=desired.current;target.current=request;
-  if(phaseRef.current==='seated'||phaseRef.current==='sitting-down'){if(request!=='sit')change('standing-up')}
-  else if(request==='sit')change('sitting-down');else if(request==='wave')change('wave');else change('idle');
- },[action,motionKey,sleep,busy]);
- const lastAttention=useRef(attention);
- useEffect(()=>{if(attention===lastAttention.current)return;lastAttention.current=attention;if(!attention||sleep||action||phaseRef.current==='wave')return;target.current='wave';timer.current=0;if(['seated','sitting-down'].includes(phaseRef.current))change('standing-up');else change('wave')},[attention,sleep,action]);
+ const preset=characters.find(c=>c.id===skin)||characters[0],sheet=preset.motion.sheet;
+ const [frame,setFrame]=useState(4),[failed,setFailed]=useState(false),[greeting,setGreeting]=useState(false);
+ useEffect(()=>{setFailed(false);const image=new Image();image.src=sheet;image.onerror=()=>setFailed(true);return()=>{image.onerror=null}},[sheet]);
+ useEffect(()=>{if(!attention||action)return;setGreeting(true);const timer=setTimeout(()=>setGreeting(false),1800);return()=>clearTimeout(timer)},[attention,action]);
+ const phase=action||(greeting?'wave':'idle');
  useEffect(()=>{onPhase?.(phase)},[phase,onPhase]);
- useEffect(()=>{
-  const activity=()=>{timer.current=0;if(!action&&!sleep&&phaseRef.current==='seated'){target.current='idle';change('standing-up')}};
-  window.addEventListener('pointerdown',activity);window.addEventListener('keydown',activity);
-  // The sheet has four authored poses per gesture. Ping-pong the wave so
-  // the wrist returns through its intermediate poses instead of snapping back.
-  const waveFrames = [4, 5, 6, 7, 6, 5];
-  const reducedMotion = window.matchMedia('(prefers-reduced-motion: reduce)');
-  let previous = performance.now();
-  const interval = setInterval(() => {
-   const now = performance.now();
-   const delta = Math.min(now - previous, 80);
-   previous = now;
-   if (document.hidden) return;
-   const phase = phaseRef.current;
-   elapsed.current += delta;
-   timer.current += delta;
-   const time = elapsed.current;
-   if (reducedMotion.matches) {
-    if (phase === 'sitting-down') change('seated');
-    else if (phase === 'standing-up' || phase === 'wave') change('idle');
-    setFrame(phase === 'seated' || phase === 'sitting-down' ? 11 : 0);
-    return;
-   }
-   if (phase === 'sitting-down' || phase === 'standing-up') {
-    const pose = Math.min(3, Math.floor(time / 125));
-    setFrame(phase === 'sitting-down' ? 8 + pose : 11 - pose);
-    if (time >= 500) change(phase === 'sitting-down' ? 'seated' : target.current === 'wave' ? 'wave' : 'idle');
-   } else if (phase === 'wave') {
-    const step = Math.floor(time / 105);
-    if (step >= waveFrames.length * 2) change('idle');
-    else setFrame(waveFrames[step % waveFrames.length]);
-   } else if (phase === 'idle') {
-    const blink = Math.floor((time % 6000) / 85);
-    setFrame(blink < 4 ? blink : 0);
-    if (!action && !sleep && !busy && timer.current >= 180000) change('sitting-down');
-   }
-  }, 32);
-  return()=>{clearInterval(interval);window.removeEventListener('pointerdown',activity);window.removeEventListener('keydown',activity)};
- },[action,sleep,busy]);
- const row=Math.floor(frame/4),col=frame%4;
- return <div className={`anime-motion ${phase} ${busy?'motion-busy':''}`} data-motion={phase} role="img" aria-label={`${name} · ${{idle:'待机',wave:'招手','sitting-down':'坐下',seated:'休息','standing-up':'站起'}[phase]}`}>
- {failed?<img className="motion-fallback" src={preset.image} alt={name}/>:<div className="motion-frame"><img src={SHEET} alt="" aria-hidden="true" draggable={false} style={{transform:`translate3d(${-col*25}%, ${-row*100/3}%, 0)`}}/></div>}{busy&&<span className="motion-thought">···</span>}</div>;
+ useEffect(()=>{const start=performance.now(),reduced=matchMedia('(prefers-reduced-motion: reduce)').matches;const update=()=>{if(document.hidden)return;const t=performance.now()-start;if(phase==='walk')setFrame(reduced?0:Math.floor(t/110)%4);else if(phase==='peek'||phase==='wave'){const frames=[8,9,10,11,10,9];setFrame(reduced?9:frames[Math.floor(t/145)%frames.length])}else{const blink=Math.floor(t%5600/95);setFrame(blink<4?4+blink:4)}};update();const timer=setInterval(update,40);return()=>clearInterval(timer)},[phase,motionKey,sheet]);
+ const pose=preset.motion.frames[frame];const imageStyle={width:`${preset.motion.sourceWidth/pose.width*100}%`,height:`${preset.motion.sourceHeight/pose.height*100}%`,left:`${-pose.x/pose.width*100}%`,top:`${-pose.y/pose.height*100}%`};
+ return <div className={`anime-motion ${phase} ${busy?'motion-busy':''} ${sleep?'motion-rest':''}`} data-motion={phase} role="img" aria-label={`${preset.name} · ${{idle:'待机',wave:'招手',walk:'走路',peek:'歪头招手'}[phase]}`}>
+ {failed?<img className="motion-fallback" src={preset.image} alt={preset.name}/>:<div className="motion-frame"><div className="motion-pose" style={{width:`${pose.width/pose.height*86}%`}}><img src={sheet} alt="" aria-hidden="true" draggable={false} style={imageStyle}/></div></div>}{busy&&<span className="motion-thought">···</span>}</div>;
 }

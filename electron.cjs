@@ -1,3 +1,4 @@
+const {createEdgePresence}=require('./edge-presence.cjs');
 const {createEffectPlayer}=require('./effect-window.cjs');
 const {app,BrowserWindow,ipcMain,screen,Tray,Menu,nativeImage,shell,session,powerMonitor}=require('electron');
 const {spawn}=require('node:child_process');
@@ -23,20 +24,27 @@ function refreshTray(){
  items.push({label:'打开好友',click:()=>openDesktop(undefined,'friends')});
  if(!inbox.total)items.push({label:'暂时没有新消息或待查收玩法',enabled:false});
  for(const a of inbox.agents){if(a.peerMessages)items.push({label:`查看好友消息（${a.peerMessages}）`,click:()=>openFriend(Object.keys(desktopState.peerUnread||{}).find(id=>desktopState.peerUnread[id]>0))});else if(a.direct)items.push({label:`查看好友直聊（${a.direct}）`,click:()=>openFriend(Object.keys(desktopState.cloud?.direct?.unread||{}).find(id=>desktopState.cloud.direct.unread[id]>0))});if(a.messages)items.push({label:`查看${a.name}的消息（${a.messages}）`,click:()=>openDesktop(a.id,'chat')});if(a.interactions)items.push({label:`查收${a.name}的玩法（${a.interactions}）`,click:()=>openFriend(desktopState.cloud?.interactions?.find(i=>i.to===desktopState.cloud.deviceId&&['pending','failed','ready'].includes(i.status))?.from)});if(a.visits)items.push({label:`查看${a.name}的敲门（${a.visits}）`,click:()=>openFriend(desktopState.cloud?.visits?.find(i=>i.to===desktopState.cloud.deviceId&&i.status==='pending')?.from)});if(a.updates)items.push({label:`查看${a.name}的升级邀请（${a.updates}）`,click:()=>openFriend(desktopState.cloud?.updateInvitations?.find(i=>i.to===desktopState.cloud.deviceId&&i.status==='pending')?.from)});if(a.requests)items.push({label:`查看${a.name}的好友申请（${a.requests}）`,click:()=>openDesktop(a.id,'friends')});}
- items.push({type:'separator'},{label:'打开聊天',click:()=>openDesktop()},{label:'查看历史聊天',click:()=>{showAll();openHistory()}},{type:'separator'},{label:'退出知交信使',click:()=>app.quit()});
+ items.push({type:'separator'},{label:'打开聊天',click:()=>openDesktop()},{label:'查看历史聊天',click:()=>openFriend('agent')},{type:'separator'},{label:'退出知交信使',click:()=>app.quit()});
  tray.setContextMenu(Menu.buildFromTemplate(items));
 }
-function updateInbox(state){desktopState=state;let changed=false;for(const a of state.agents||[])if(ui.seen[a.id]===undefined){ui.seen[a.id]=conversation(state,a.id).at(-1)?.id||'';changed=true}if(changed)saveUI();inbox=summarizeInbox(state,ui.seen);refreshTray()}
-function hideAll(){ui.hidden=true;saveUI();for(const pet of pets.values())pet.webContents.send('desktop-open','collapse');for(const win of [...pets.values(),...histories.values(),...Array.from(visitors.values(),v=>v.win),...(friendWindow?[friendWindow]:[])])win.hide();refreshTray()}
-function openDesktop(id,view='chat'){if(['inbox','interactions','visits','updates'].includes(view)){const c=desktopState.cloud;const item=view==='visits'?c?.visits?.find(i=>i.to===c.deviceId&&i.status==='pending'):view==='updates'?c?.updateInvitations?.find(i=>i.to===c.deviceId&&i.status==='pending'):c?.interactions?.find(i=>i.to===c.deviceId&&['pending','ready','failed'].includes(i.status));const peer=item?.from||Object.keys(desktopState.peerUnread||{}).find(id=>desktopState.peerUnread[id]>0);if(peer&&c?.friends?.includes(peer)){openFriend(peer);return}view='friends'}showAll();const pet=pets.get(id)||pets.values().next().value;if(!pet)return;pet.show();pet.focus();const open=()=>{if(!pet.isDestroyed())pet.webContents.send('desktop-open',view)};if(pet.webContents.isLoadingMainFrame())pet.webContents.once('did-finish-load',open);else open()}
+function updateInbox(state){desktopState=state;let changed=false;for(const a of state.agents||[])if(ui.seen[a.id]===undefined){ui.seen[a.id]=conversation(state,a.id).at(-1)?.id||'';changed=true}if(changed)saveUI();inbox=summarizeInbox(state,ui.seen);refreshTray();updateEdgeNotices(state)}
+function hideAll(){edgePresence.suspend();ui.hidden=true;saveUI();for(const pet of pets.values())pet.webContents.send('desktop-open','collapse');for(const win of [...pets.values(),...histories.values(),...Array.from(visitors.values(),v=>v.win),...(friendWindow?[friendWindow]:[])])win.hide();refreshTray()}
+function openDesktop(id,view='chat'){
+ if(['inbox','interactions','visits','updates'].includes(view)){const c=desktopState.cloud;const items=view==='visits'?c?.visits:view==='updates'?c?.updateInvitations:c?.interactions;const item=items?.find(i=>i.to===c.deviceId&&['pending','ready','failed'].includes(i.status));if(item&&c?.friends?.includes(item.from)){openFriend(item.from);return}}
+ openFriend(view==='friends'?'contacts':'agent');
+}
 
 const {expandedBounds,characterCenter,conversationPlacement,visitorBounds}=require('./window-placement.cjs');
 let friendWindow=null,friendPeer='';
 let service,tray,setup,visitorTimer,pickVisitors,visitorsBusy=false,quitting=false;
 const visitors=new Map();
+const characterDrags=new Map();
 const pets=new Map(),histories=new Map(),placements=new Map();
 const url='http://127.0.0.1:4317';
 const preferences={preload:path.join(__dirname,'preload.cjs'),contextIsolation:true,nodeIntegration:false};
+const edgePresence=createEdgePresence({screen,suppressed:()=>ui.hidden||!!friendWindow?.isVisible()||quitting,isDragging:win=>characterDrags.has(win),onState:(id,value)=>{const pet=pets.get(id);if(pet&&!pet.isDestroyed())pet.webContents.send('edge-presence',value)}});
+function updateEdgeNotices(state){for(const a of inbox.agents){const c=state.cloud?.agentId===a.id?state.cloud:null;const key=JSON.stringify([conversation(state,a.id).at(-1)?.id,c?.direct?.messages?.filter(m=>m.incoming&&!m.read).map(m=>m.id),state.peerUnread,c?.requests?.filter(r=>r.recipient===c.deviceId&&r.status==='pending').map(r=>r.id),c?.visits?.filter(v=>v.to===c.deviceId&&v.status==='pending').map(v=>v.id),c?.interactions?.filter(i=>i.to===c.deviceId&&['pending','ready','failed'].includes(i.status)).map(i=>[i.id,i.status])]);edgePresence.notice(a.id,key,a.unread+(a.peerMessages||a.direct)+a.requests+a.plays+a.updates)}}
+const edgeTimer=setInterval(()=>edgePresence.tick(),16);edgeTimer.unref?.();
 const effectPlayer=createEffectPlayer({BrowserWindow,screen,preferences,url});
 async function ready(){for(let i=0;i<80;i++){try{const r=await fetch(url+'/api/state');if(r.ok)return}catch{}await new Promise(r=>setTimeout(r,250))}throw Error('本地服务启动超时')}
 function openHistory(id){
@@ -53,18 +61,20 @@ function openHistory(id){
  history.show();history.focus();
 }
 function openFriend(peer){
- if(typeof peer!=='string'||!desktopState.cloud?.friends?.includes(peer))return;
- for(const pet of pets.values())if(!pet.isDestroyed())pet.webContents.send('desktop-open','collapse');
+ if(typeof peer!=='string'||!['agent','contacts'].includes(peer)&&!desktopState.cloud?.friends?.includes(peer))return;
+ for(const pet of pets.values())if(!pet.isDestroyed()){pet.webContents.send('desktop-open','collapse');pet.hide();}
+ edgePresence.suspend();
  friendPeer=peer;
  if(!friendWindow||friendWindow.isDestroyed()){
   const pet=pets.values().next().value;let area=screen.getPrimaryDisplay().workArea;
   const bounds=pet?.getBounds(),center=bounds?characterCenter(bounds,placements.get(pet)||'left'):{x:area.x+area.width,y:area.y+area.height/2};
   if(bounds)area=screen.getDisplayNearestPoint(center).workArea;
   const width=Math.min(780,area.width),height=Math.min(720,area.height);
-  friendWindow=new BrowserWindow({width,height,minWidth:560,minHeight:480,x:Math.max(area.x,Math.min(center.x-width-90,area.x+area.width-width)),y:Math.max(area.y,Math.min(Math.round(center.y-height/2),area.y+area.height-height)),title:'知交信使 · 好友聊天',backgroundColor:'#24211e',show:false,webPreferences:preferences});
+  friendWindow=new BrowserWindow({width,height,minWidth:560,minHeight:480,x:Math.max(area.x,Math.min(center.x-width-90,area.x+area.width-width)),y:Math.max(area.y,Math.min(Math.round(center.y-height/2),area.y+area.height-height)),title:'知交信使 · 聊天',backgroundColor:'#24211e',show:false,webPreferences:preferences});
   const win=friendWindow;win.loadURL(url+'/?friend='+encodeURIComponent(peer));
   win.once('ready-to-show',()=>{if(!win.isDestroyed()){win.show();win.focus()}});
-  win.on('close',event=>{if(!quitting){event.preventDefault();win.hide()}});
+  win.on('show',()=>{for(const pet of pets.values())if(!pet.isDestroyed())pet.hide()});
+  win.on('close',event=>{if(!quitting){event.preventDefault();win.hide();showAll()}});
   win.on('closed',()=>{if(friendWindow===win)friendWindow=null});
  }else{friendWindow.show();friendWindow.focus();friendWindow.webContents.send('friend-selected',peer)}
 }
@@ -74,11 +84,11 @@ function createPets(agents){
   if(pets.has(a.id))return;
   // Each companion owns its canvas and conversation; transparent regions pass through.
   const gap=Math.min(640,Math.max(250,(work.width-260)/Math.max(1,agents.length-1)));
-  const canvas=expandedBounds({x:work.x+work.width-260-index*gap,y:work.y+work.height-335,width:240,height:320},work);
+  const canvas={x:Math.max(work.x,work.x+work.width-320-index*gap),y:Math.max(work.y,work.y+work.height-365),width:Math.min(300,work.width),height:Math.min(360,work.height)};
   const pet=new BrowserWindow({...canvas,title:a.name+' · 知交信使',transparent:true,backgroundColor:'#00000000',frame:false,hasShadow:false,resizable:false,alwaysOnTop:true,skipTaskbar:true,show:!ui.hidden,webPreferences:preferences});
-  pets.set(a.id,pet);placements.set(pet,'left');pet.loadURL(url+'/?agent='+encodeURIComponent(a.id)+'&panel=left');
+  pets.set(a.id,pet);edgePresence.register(a.id,pet);pet.webContents.on('did-finish-load',()=>pet.webContents.send('edge-presence',edgePresence.get(a.id)));placements.set(pet,'left');pet.loadURL(url+'/?agent='+encodeURIComponent(a.id)+'&panel=left');
   let placementTimer;
-  pet.on('move',()=>{clearTimeout(placementTimer);placementTimer=setTimeout(()=>{
+  pet.on('move',()=>{clearTimeout(placementTimer);if(characterDrags.has(pet)||edgePresence.get(a.id)?.phase!=='shown')return;placementTimer=setTimeout(()=>{
    if(pet.isDestroyed())return;
    const previous=placements.get(pet)||'left';const bounds=pet.getBounds();
    const work=screen.getDisplayNearestPoint(characterCenter(bounds,previous)).workArea;
@@ -86,7 +96,7 @@ function createPets(agents){
    placements.set(pet,next.side);
    if(next.side!==previous){pet.setBounds(next.bounds);pet.webContents.send('panel-placement',next.side);}
   },160);});
-  pet.on('closed',()=>{clearTimeout(placementTimer);placements.delete(pet)});
+  pet.on('closed',()=>{characterDrags.delete(pet);clearTimeout(placementTimer);placements.delete(pet)});
   pet.webContents.setWindowOpenHandler(()=>({action:'deny'}));
   pet.on('closed',()=>pets.delete(a.id));
  });
@@ -113,7 +123,7 @@ async function syncVisitors(){
   }
  }catch(e){console.error('同步桌面访客失败：'+e.message)}finally{visitorsBusy=false;}
 }
-function showAll(){ui.hidden=false;saveUI();if(setup)setup.show();else{for(const pet of pets.values())pet.showInactive();for(const {win} of visitors.values())win.showInactive()}refreshTray()}
+function showAll(){ui.hidden=false;saveUI();if(setup)setup.show();else{if(!friendWindow?.isVisible())edgePresence.reveal();for(const {win} of visitors.values())win.showInactive()}refreshTray()}
 app.on('web-contents-created',(_event,contents)=>{contents.on('render-process-gone',(_event,details)=>{lifecycleLog('renderer-gone',details.reason);if(!quitting&&details.reason!=='clean-exit'&&!contents.isDestroyed())contents.reload()});contents.on('will-frame-navigate',event=>event.preventDefault());contents.setWindowOpenHandler(()=>({action:'deny'}));});
 if(!app.requestSingleInstanceLock()){app.quit();}else{
 app.on('second-instance',showAll);
@@ -153,20 +163,32 @@ app.whenReady().then(async()=>{
  ipcMain.on('friend-read',async(event,{peer,id}={})=>{if(!friendWindow||event.sender!==friendWindow.webContents||!friendWindow.isVisible()||!friendWindow.isFocused()||peer!==friendPeer)return;try{await fetch(url+'/api/cloud/direct-read',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({to:peer,id})})}catch(error){lifecycleLog('friend-read-failed',error.message)}});
  ipcMain.on('open-agent',(_event,view)=>openDesktop(undefined,['chat','friends','inbox','updates','interactions','visits'].includes(view)?view:'chat'));
  ipcMain.handle('desktop-status',()=>({...inbox,hidden:ui.hidden}));
- ipcMain.on('desktop-hide',e=>{if([...pets.values(),...histories.values()].includes(BrowserWindow.fromWebContents(e.sender)))hideAll()});
+ ipcMain.on('desktop-hide',e=>{if([...pets.values(),...histories.values(),friendWindow].includes(BrowserWindow.fromWebContents(e.sender)))hideAll()});
  ipcMain.on('desktop-read',(e,{agentId,lastId}={})=>{
-  const win=BrowserWindow.fromWebContents(e.sender);if(!win||!win.isVisible()||!win.isFocused()||!(pets.get(agentId)===win||histories.get(agentId)===win))return;
+  const win=BrowserWindow.fromWebContents(e.sender);if(!win||!win.isVisible()||!win.isFocused()||!(pets.get(agentId)===win||histories.get(agentId)===win||win===friendWindow&&friendPeer==='agent'))return;
   if(markConversationRead(desktopState,ui.seen,agentId,lastId)){saveUI();inbox=summarizeInbox(desktopState,ui.seen);refreshTray()}
  });
  ipcMain.handle('panel-placement',e=>placements.get(BrowserWindow.fromWebContents(e.sender))||'left');
  ipcMain.on('open-updates',(_e,id)=>openDesktop(id,'updates'));
  ipcMain.on('open-history',(_e,id)=>openHistory(id));
  ipcMain.on('hide-history',e=>BrowserWindow.fromWebContents(e.sender)?.hide());
+ ipcMain.handle('edge-presence',event=>edgePresence.get([...pets].find(([,w])=>w.webContents===event.sender)?.[0]));
+ ipcMain.on('character-activity',event=>edgePresence.activity([...pets].find(([,w])=>w.webContents===event.sender)?.[0]));
+ ipcMain.on('character-drag',(event,phase)=>{
+  const win=BrowserWindow.fromWebContents(event.sender);if(![...pets.values()].includes(win)||win.isDestroyed())return;
+  if(phase==='end'){if(characterDrags.delete(win)){edgePresence.drag([...pets].find(([,w])=>w===win)?.[0],false);win.emit('move');}return}
+  if(!win.isVisible())return;
+  const point=screen.getCursorScreenPoint();
+  if(phase==='begin'){const bounds=win.getBounds();characterDrags.set(win,{point,x:bounds.x,y:bounds.y});edgePresence.drag([...pets].find(([,w])=>w===win)?.[0],true);win.setIgnoreMouseEvents(false);}
+  else if(phase==='move'){const start=characterDrags.get(win);if(start)win.setPosition(Math.round(start.x+point.x-start.point.x),Math.round(start.y+point.y-start.point.y));}
+ });
  ipcMain.on('pointer-through',(e,value)=>{const win=BrowserWindow.fromWebContents(e.sender);if([...pets.values(),...Array.from(visitors.values(),v=>v.win)].includes(win))win.setIgnoreMouseEvents(value===true,{forward:true})});
  visitorTimer=setInterval(()=>void syncVisitors(),1000);void syncVisitors();
  tray=new Tray(nativeImage.createFromPath(path.join(__dirname,'assets/tray/idle.png')).resize({width:22,height:22}));refreshTray();
  app.on('activate',()=>{if(!ui.hidden)showAll()});
- disposeRecovery=installDesktopRecovery({powerMonitor,screen,windows:()=>recoveryWindows({hidden:ui.hidden,setup,pets:[...pets.values()],visitors:Array.from(visitors.values(),v=>v.win),histories:[...histories.values(),...(friendWindow?[friendWindow]:[])]}),isQuitting:()=>quitting,log:lifecycleLog});
+ for(const event of ['resume','unlock-screen','user-did-become-active'])powerMonitor?.on?.(event,()=>edgePresence.recover());
+ for(const event of ['display-added','display-removed','display-metrics-changed'])screen.on?.(event,()=>edgePresence.recover());
+ disposeRecovery=installDesktopRecovery({powerMonitor,screen,windows:()=>recoveryWindows({hidden:ui.hidden,setup,pets:[...pets.values()].filter(win=>edgePresence.isShown(win)),visitors:Array.from(visitors.values(),v=>v.win),histories:[...histories.values(),...(friendWindow?[friendWindow]:[])]}),isQuitting:()=>quitting,log:lifecycleLog});
 }).catch(e=>{console.error(e);app.quit()});
 app.on('window-all-closed',()=>{});
 app.on('before-quit',()=>{lifecycleLog('before-quit');quitting=true;effectPlayer.dispose();disposeRecovery?.();clearInterval(visitorTimer);service?.kill()});

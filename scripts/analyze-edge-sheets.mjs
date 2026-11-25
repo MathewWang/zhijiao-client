@@ -1,0 +1,11 @@
+// Read PNG pixels to record per-pose framing; original artwork is never edited.
+import {readFileSync,writeFileSync} from 'node:fs';import {inflateSync} from 'node:zlib';
+const paeth=(a,b,c)=>{const p=a+b-c,x=Math.abs(p-a),y=Math.abs(p-b),z=Math.abs(p-c);return x<=y&&x<=z?a:y<=z?b:c};
+function png(file){const b=readFileSync(file),w=b.readUInt32BE(16),h=b.readUInt32BE(20);if(b[24]!==8||b[25]!==6||b[28]!==0)throw Error('Expected noninterlaced RGBA8');const parts=[];for(let at=8;at<b.length;){const n=b.readUInt32BE(at);if(b.toString('ascii',at+4,at+8)==='IDAT')parts.push(b.subarray(at+8,at+8+n));at+=12+n}const data=inflateSync(Buffer.concat(parts)),pixels=Buffer.alloc(w*h*4);for(let y=0;y<h;y++){const f=data[y*(w*4+1)];for(let x=0;x<w*4;x++){const at=y*w*4+x,a=x>=4?pixels[at-4]:0,c=y&&x>=4?pixels[at-w*4-4]:0,up=y?pixels[at-w*4]:0;pixels[at]=(data[y*(w*4+1)+1+x]+(f===0?0:f===1?a:f===2?up:f===3?Math.floor((a+up)/2):paeth(a,up,c)))&255}}return {w,h,pixels};}
+const catalog=JSON.parse(readFileSync('shared/characters.json','utf8'));
+for(const c of catalog){const {w,h,pixels}=png('public'+c.motion.sheet);const counts=Array(h).fill(0);let red=0;for(let y=0;y<h;y++)for(let x=0;x<w;x++){const i=(y*w+x)*4;if(pixels[i+3]>220){counts[y]++;if(pixels[i]>200&&pixels[i+1]<60&&pixels[i+2]<60)red++}}
+ const boundaries=[0];for(let row=1;row<3;row++){const center=h*row/3,start=Math.floor(center-h/12),end=Math.ceil(center+h/12);let best=start;for(let y=start+1;y<=end;y++)if(counts[y]<counts[best]||counts[y]===counts[best]&&Math.abs(y-center)<Math.abs(best-center))best=y;boundaries.push(best)}boundaries.push(h);
+ const frames=[];for(let row=0;row<3;row++)for(let col=0;col<4;col++){let top=h,bottom=0,left=w,right=0;for(let y=boundaries[row];y<boundaries[row+1];y++)for(let x=col*w/4;x<(col+1)*w/4;x++){if(pixels[(y*w+x)*4+3]>220){top=Math.min(top,y);bottom=Math.max(bottom,y);left=Math.min(left,x);right=Math.max(right,x)}}const height=bottom-top+1;frames.push({x:col*w/4,y:top-6,width:w/4,height:height+12})}
+ c.motion.frames=frames;c.motion.sourceWidth=w;c.motion.sourceHeight=h;console.log(c.id,{boundaries,red,frames:frames.map(f=>[f.y,f.height])});
+}
+writeFileSync('shared/characters.json',JSON.stringify(catalog,null,2)+'\n');

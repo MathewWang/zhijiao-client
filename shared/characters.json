@@ -7,9 +7,86 @@
     "animated": true,
     "image": "/characters/taotao-anime.png",
     "motion": {
-      "sheet": "/characters/taotao-motion-v1.png",
+      "sheet": "/characters/taotao-edge-v2.png",
       "columns": 4,
-      "rows": 3
+      "rows": 3,
+      "layout": "edge-v2",
+      "frames": [
+        {
+          "x": 0,
+          "y": 0,
+          "width": 362,
+          "height": 331
+        },
+        {
+          "x": 362,
+          "y": 0,
+          "width": 362,
+          "height": 330
+        },
+        {
+          "x": 724,
+          "y": 0,
+          "width": 362,
+          "height": 330
+        },
+        {
+          "x": 1086,
+          "y": 0,
+          "width": 362,
+          "height": 331
+        },
+        {
+          "x": 0,
+          "y": 336,
+          "width": 362,
+          "height": 359
+        },
+        {
+          "x": 362,
+          "y": 336,
+          "width": 362,
+          "height": 359
+        },
+        {
+          "x": 724,
+          "y": 336,
+          "width": 362,
+          "height": 359
+        },
+        {
+          "x": 1086,
+          "y": 336,
+          "width": 362,
+          "height": 359
+        },
+        {
+          "x": 0,
+          "y": 699,
+          "width": 362,
+          "height": 373
+        },
+        {
+          "x": 362,
+          "y": 699,
+          "width": 362,
+          "height": 373
+        },
+        {
+          "x": 724,
+          "y": 699,
+          "width": 362,
+          "height": 373
+        },
+        {
+          "x": 1086,
+          "y": 699,
+          "width": 362,
+          "height": 373
+        }
+      ],
+      "sourceWidth": 1448,
+      "sourceHeight": 1086
     }
   },
   {
@@ -20,9 +97,86 @@
     "animated": true,
     "image": "/characters/xiaobai-anime.png",
     "motion": {
-      "sheet": "/characters/xiaobai-motion-v1.png",
+      "sheet": "/characters/xiaobai-edge-v2.png",
       "columns": 4,
-      "rows": 3
+      "rows": 3,
+      "layout": "edge-v2",
+      "frames": [
+        {
+          "x": 0,
+          "y": 2,
+          "width": 362,
+          "height": 344
+        },
+        {
+          "x": 362,
+          "y": 2,
+          "width": 362,
+          "height": 339
+        },
+        {
+          "x": 724,
+          "y": 2,
+          "width": 362,
+          "height": 338
+        },
+        {
+          "x": 1086,
+          "y": 2,
+          "width": 362,
+          "height": 334
+        },
+        {
+          "x": 0,
+          "y": 362,
+          "width": 362,
+          "height": 356
+        },
+        {
+          "x": 362,
+          "y": 362,
+          "width": 362,
+          "height": 356
+        },
+        {
+          "x": 724,
+          "y": 362,
+          "width": 362,
+          "height": 356
+        },
+        {
+          "x": 1086,
+          "y": 362,
+          "width": 362,
+          "height": 356
+        },
+        {
+          "x": 0,
+          "y": 725,
+          "width": 362,
+          "height": 356
+        },
+        {
+          "x": 362,
+          "y": 726,
+          "width": 362,
+          "height": 355
+        },
+        {
+          "x": 724,
+          "y": 726,
+          "width": 362,
+          "height": 355
+        },
+        {
+          "x": 1086,
+          "y": 726,
+          "width": 362,
+          "height": 355
+        }
+      ],
+      "sourceWidth": 1448,
+      "sourceHeight": 1086
     }
   },
   {
@@ -33,9 +187,86 @@
     "animated": true,
     "image": "/characters/qinghe-anime.png",
     "motion": {
-      "sheet": "/characters/qinghe-motion-v1.png",
+      "sheet": "/characters/qinghe-edge-v2.png",
       "columns": 4,
-      "rows": 3
+      "rows": 3,
+      "layout": "edge-v2",
+      "frames": [
+        {
+          "x": 0,
+          "y": 3,
+          "width": 362,
+          "height": 335
+        },
+        {
+          "x": 362,
+          "y": 3,
+          "width": 362,
+          "height": 335
+        },
+        {
+          "x": 724,
+          "y": 3,
+          "width": 362,
+          "height": 334
+        },
+        {
+          "x": 1086,
+          "y": 3,
+          "width": 362,
+          "height": 336
+        },
+        {
+          "x": 0,
+          "y": 363,
+          "width": 362,
+          "height": 344
+        },
+        {
+          "x": 362,
+          "y": 364,
+          "width": 362,
+          "height": 343
+        },
+        {
+          "x": 724,
+          "y": 363,
+          "width": 362,
+          "height": 344
+        },
+        {
+          "x": 1086,
+          "y": 364,
+          "width": 362,
+          "height": 343
+        },
+        {
+          "x": 0,
+          "y": 727,
+          "width": 362,
+          "height": 342
+        },
+        {
+          "x": 362,
+          "y": 727,
+          "width": 362,
+          "height": 342
+        },
+        {
+          "x": 724,
+          "y": 727,
+          "width": 362,
+          "height": 342
+        },
+        {
+          "x": 1086,
+          "y": 727,
+          "width": 362,
+          "height": 342
+        }
+      ],
+      "sourceWidth": 1448,
+      "sourceHeight": 1086
     }
   },
   {
@@ -46,9 +277,86 @@
     "animated": true,
     "image": "/characters/xinglan-anime.png",
     "motion": {
-      "sheet": "/characters/xinglan-motion-v1.png",
+      "sheet": "/characters/xinglan-edge-v2.png",
       "columns": 4,
-      "rows": 3
+      "rows": 3,
+      "layout": "edge-v2",
+      "frames": [
+        {
+          "x": 0,
+          "y": 5,
+          "width": 362,
+          "height": 334
+        },
+        {
+          "x": 362,
+          "y": 6,
+          "width": 362,
+          "height": 333
+        },
+        {
+          "x": 724,
+          "y": 6,
+          "width": 362,
+          "height": 332
+        },
+        {
+          "x": 1086,
+          "y": 6,
+          "width": 362,
+          "height": 333
+        },
+        {
+          "x": 0,
+          "y": 367,
+          "width": 362,
+          "height": 344
+        },
+        {
+          "x": 362,
+          "y": 367,
+          "width": 362,
+          "height": 344
+        },
+        {
+          "x": 724,
+          "y": 367,
+          "width": 362,
+          "height": 344
+        },
+        {
+          "x": 1086,
+          "y": 367,
+          "width": 362,
+          "height": 344
+        },
+        {
+          "x": 0,
+          "y": 730,
+          "width": 362,
+          "height": 345
+        },
+        {
+          "x": 362,
+          "y": 731,
+          "width": 362,
+          "height": 344
+        },
+        {
+          "x": 724,
+          "y": 730,
+          "width": 362,
+          "height": 345
+        },
+        {
+          "x": 1086,
+          "y": 731,
+          "width": 362,
+          "height": 344
+        }
+      ],
+      "sourceWidth": 1448,
+      "sourceHeight": 1086
     }
   },
   {
@@ -59,9 +367,86 @@
     "animated": true,
     "image": "/characters/tangli-anime.png",
     "motion": {
-      "sheet": "/characters/tangli-motion-v1.png",
+      "sheet": "/characters/tangli-edge-v2.png",
       "columns": 4,
-      "rows": 3
+      "rows": 3,
+      "layout": "edge-v2",
+      "frames": [
+        {
+          "x": 0,
+          "y": 4,
+          "width": 362,
+          "height": 353
+        },
+        {
+          "x": 362,
+          "y": 4,
+          "width": 362,
+          "height": 354
+        },
+        {
+          "x": 724,
+          "y": 4,
+          "width": 362,
+          "height": 353
+        },
+        {
+          "x": 1086,
+          "y": 4,
+          "width": 362,
+          "height": 354
+        },
+        {
+          "x": 0,
+          "y": 363,
+          "width": 362,
+          "height": 358
+        },
+        {
+          "x": 362,
+          "y": 363,
+          "width": 362,
+          "height": 358
+        },
+        {
+          "x": 724,
+          "y": 363,
+          "width": 362,
+          "height": 358
+        },
+        {
+          "x": 1086,
+          "y": 363,
+          "width": 362,
+          "height": 358
+        },
+        {
+          "x": 0,
+          "y": 727,
+          "width": 362,
+          "height": 356
+        },
+        {
+          "x": 362,
+          "y": 727,
+          "width": 362,
+          "height": 356
+        },
+        {
+          "x": 724,
+          "y": 727,
+          "width": 362,
+          "height": 356
+        },
+        {
+          "x": 1086,
+          "y": 727,
+          "width": 362,
+          "height": 356
+        }
+      ],
+      "sourceWidth": 1448,
+      "sourceHeight": 1086
     }
   },
   {
@@ -72,9 +457,86 @@
     "animated": true,
     "image": "/characters/yuexia-anime.png",
     "motion": {
-      "sheet": "/characters/yuexia-motion-v1.png",
+      "sheet": "/characters/yuexia-edge-v2.png",
       "columns": 4,
-      "rows": 3
+      "rows": 3,
+      "layout": "edge-v2",
+      "frames": [
+        {
+          "x": 0,
+          "y": 0,
+          "width": 362,
+          "height": 336
+        },
+        {
+          "x": 362,
+          "y": 0,
+          "width": 362,
+          "height": 337
+        },
+        {
+          "x": 724,
+          "y": 1,
+          "width": 362,
+          "height": 335
+        },
+        {
+          "x": 1086,
+          "y": 0,
+          "width": 362,
+          "height": 336
+        },
+        {
+          "x": 0,
+          "y": 361,
+          "width": 362,
+          "height": 347
+        },
+        {
+          "x": 362,
+          "y": 361,
+          "width": 362,
+          "height": 347
+        },
+        {
+          "x": 724,
+          "y": 361,
+          "width": 362,
+          "height": 347
+        },
+        {
+          "x": 1086,
+          "y": 361,
+          "width": 362,
+          "height": 347
+        },
+        {
+          "x": 0,
+          "y": 727,
+          "width": 362,
+          "height": 347
+        },
+        {
+          "x": 362,
+          "y": 727,
+          "width": 362,
+          "height": 347
+        },
+        {
+          "x": 724,
+          "y": 727,
+          "width": 362,
+          "height": 347
+        },
+        {
+          "x": 1086,
+          "y": 727,
+          "width": 362,
+          "height": 347
+        }
+      ],
+      "sourceWidth": 1448,
+      "sourceHeight": 1086
     }
   },
   {
@@ -85,9 +547,86 @@
     "animated": true,
     "image": "/characters/yanzhou-anime.png",
     "motion": {
-      "sheet": "/characters/yanzhou-motion-v1.png",
+      "sheet": "/characters/yanzhou-edge-v2.png",
       "columns": 4,
-      "rows": 3
+      "rows": 3,
+      "layout": "edge-v2",
+      "frames": [
+        {
+          "x": 0,
+          "y": 8,
+          "width": 362,
+          "height": 341
+        },
+        {
+          "x": 362,
+          "y": 8,
+          "width": 362,
+          "height": 342
+        },
+        {
+          "x": 724,
+          "y": 9,
+          "width": 362,
+          "height": 340
+        },
+        {
+          "x": 1086,
+          "y": 8,
+          "width": 362,
+          "height": 342
+        },
+        {
+          "x": 0,
+          "y": 367,
+          "width": 362,
+          "height": 350
+        },
+        {
+          "x": 362,
+          "y": 368,
+          "width": 362,
+          "height": 349
+        },
+        {
+          "x": 724,
+          "y": 368,
+          "width": 362,
+          "height": 349
+        },
+        {
+          "x": 1086,
+          "y": 368,
+          "width": 362,
+          "height": 349
+        },
+        {
+          "x": 0,
+          "y": 732,
+          "width": 362,
+          "height": 348
+        },
+        {
+          "x": 362,
+          "y": 732,
+          "width": 362,
+          "height": 348
+        },
+        {
+          "x": 724,
+          "y": 732,
+          "width": 362,
+          "height": 348
+        },
+        {
+          "x": 1086,
+          "y": 732,
+          "width": 362,
+          "height": 348
+        }
+      ],
+      "sourceWidth": 1448,
+      "sourceHeight": 1086
     }
   },
   {
@@ -98,9 +637,86 @@
     "animated": true,
     "image": "/characters/jingchuan-anime.png",
     "motion": {
-      "sheet": "/characters/jingchuan-motion-v1.png",
+      "sheet": "/characters/jingchuan-edge-v2.png",
       "columns": 4,
-      "rows": 3
+      "rows": 3,
+      "layout": "edge-v2",
+      "frames": [
+        {
+          "x": 0,
+          "y": 3,
+          "width": 362,
+          "height": 324
+        },
+        {
+          "x": 362,
+          "y": 3,
+          "width": 362,
+          "height": 326
+        },
+        {
+          "x": 724,
+          "y": 3,
+          "width": 362,
+          "height": 324
+        },
+        {
+          "x": 1086,
+          "y": 3,
+          "width": 362,
+          "height": 326
+        },
+        {
+          "x": 0,
+          "y": 356,
+          "width": 362,
+          "height": 344
+        },
+        {
+          "x": 362,
+          "y": 357,
+          "width": 362,
+          "height": 343
+        },
+        {
+          "x": 724,
+          "y": 357,
+          "width": 362,
+          "height": 343
+        },
+        {
+          "x": 1086,
+          "y": 357,
+          "width": 362,
+          "height": 343
+        },
+        {
+          "x": 0,
+          "y": 724,
+          "width": 362,
+          "height": 338
+        },
+        {
+          "x": 362,
+          "y": 725,
+          "width": 362,
+          "height": 338
+        },
+        {
+          "x": 724,
+          "y": 724,
+          "width": 362,
+          "height": 339
+        },
+        {
+          "x": 1086,
+          "y": 725,
+          "width": 362,
+          "height": 338
+        }
+      ],
+      "sourceWidth": 1448,
+      "sourceHeight": 1086
     }
   }
 ]

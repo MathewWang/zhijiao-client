@@ -21,7 +21,11 @@ export function normalizeSocialAction(value,contacts){
  if(typeof value.to!=='string'||!contacts.some(c=>c.id===value.to))throw Error('请先确认对方已成为好友');
  const action={type:value.type,to:value.to,text:clean(value.text??'',SOCIAL_ACTIONS[value.type].limit,value.type!=='update.invite')};
  if(action.type==='visit.invite'){action.url=clean(value.url??'',2000);if(action.url){const u=new URL(action.url);if(!['http:','https:'].includes(u.protocol)||u.username||u.password)throw Error('串门链接只支持普通 HTTP/HTTPS 地址')}}
- if(action.type==='effect.create'){if(!['gift.flowers','celebration.fireworks','custom.effect'].includes(value.kind))throw Error('请选择送花、烟花或自定义效果');action.kind=value.kind;action.title=clean(value.title??'',40,value.kind==='custom.effect');action.brief=clean(value.brief??'',2000,value.kind==='custom.effect')}
+ if(action.type==='effect.create'){
+  if(value.kind!==undefined&&(typeof value.kind!=='string'||value.kind.length>80))throw Error('玩法类型无效');
+  action.kind=['gift.flowers','celebration.fireworks'].includes(value.kind)?value.kind:'custom.effect';
+  action.title=clean(value.title??'',40,action.kind==='custom.effect');action.brief=clean(value.brief??'',2000,action.kind==='custom.effect');
+ }
  return action;
 }
 export function createSocialExecutor({cloud,fetchRelease,prepareEffect}){return async(raw,{key,source='主人'}={})=>{

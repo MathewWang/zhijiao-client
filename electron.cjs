@@ -11,25 +11,26 @@ const uiFile=path.join(logDir,'desktop-ui.json');
 let ui={hidden:false,seen:{}};try{const value=JSON.parse(fs.readFileSync(uiFile,'utf8'));ui={hidden:value.hidden===true,seen:value.seen&&typeof value.seen==='object'?value.seen:{}}}catch{}
 let desktopState={agents:[],messages:[]},inbox=summarizeInbox(desktopState),traySignature='';
 const saveUI=()=>{try{const temp=uiFile+'.tmp';fs.writeFileSync(temp,JSON.stringify(ui),{mode:0o600});fs.renameSync(temp,uiFile)}catch(e){lifecycleLog('ui-save-failed',e.message)}};
-function publishInbox(){const value={...inbox,hidden:ui.hidden};for(const win of [...pets.values(),...histories.values()])if(!win.isDestroyed())win.webContents.send('desktop-status',value)}
+function publishInbox(){const value={...inbox,hidden:ui.hidden};for(const win of [...pets.values(),...histories.values(),...(friendWindow?[friendWindow]:[])])if(!win.isDestroyed())win.webContents.send('desktop-status',value)}
 function refreshTray(){
  publishInbox();if(!tray)return;
  const signature=JSON.stringify([ui.hidden,inbox]);if(signature===traySignature)return;traySignature=signature;
  const image=nativeImage.createFromPath(path.join(__dirname,'assets/tray',inbox.total?'unread.png':'idle.png')).resize({width:22,height:22});
  tray.setImage(image);tray.setTitle(inbox.total?String(Math.min(inbox.total,99))+(inbox.total>99?'+':''):'');
- tray.setToolTip(`知交信使 · ${inbox.messages} 条消息 · ${inbox.plays} 个玩法 · ${inbox.updates} 个升级邀请`);
+ tray.setToolTip(`知交信使 · ${inbox.messages+inbox.direct} 条消息 · ${inbox.plays} 个玩法 · ${inbox.updates} 个升级邀请`);
  const items=[{label:'知交信使 · 后台运行中',enabled:false},{label:ui.hidden?'显示桌面人物':'隐藏桌面人物',click:()=>ui.hidden?showAll():hideAll()},{type:'separator'}];
- items.push({label:'打开收件箱',click:()=>openDesktop(inbox.agents.find(a=>a.messages+a.plays+a.requests+a.updates>0)?.id,'inbox')});
+ items.push({label:'打开好友',click:()=>openDesktop(undefined,'friends')});
  if(!inbox.total)items.push({label:'暂时没有新消息或待查收玩法',enabled:false});
- for(const a of inbox.agents){if(a.messages)items.push({label:`查看${a.name}的消息（${a.messages}）`,click:()=>openDesktop(a.id,'chat')});if(a.interactions)items.push({label:`查收${a.name}的玩法（${a.interactions}）`,click:()=>openDesktop(a.id,'interactions')});if(a.visits)items.push({label:`查看${a.name}的敲门（${a.visits}）`,click:()=>openDesktop(a.id,'visits')});if(a.updates)items.push({label:`查看${a.name}的升级邀请（${a.updates}）`,click:()=>openDesktop(a.id,'updates')});if(a.requests)items.push({label:`查看${a.name}的好友申请（${a.requests}）`,click:()=>openDesktop(a.id,'friends')});}
+ for(const a of inbox.agents){if(a.direct)items.push({label:`查看好友直聊（${a.direct}）`,click:()=>openFriend(Object.keys(desktopState.cloud?.direct?.unread||{}).find(id=>desktopState.cloud.direct.unread[id]>0))});if(a.messages)items.push({label:`查看${a.name}的消息（${a.messages}）`,click:()=>openDesktop(a.id,'chat')});if(a.interactions)items.push({label:`查收${a.name}的玩法（${a.interactions}）`,click:()=>openDesktop(a.id,'interactions')});if(a.visits)items.push({label:`查看${a.name}的敲门（${a.visits}）`,click:()=>openDesktop(a.id,'visits')});if(a.updates)items.push({label:`查看${a.name}的升级邀请（${a.updates}）`,click:()=>openDesktop(a.id,'updates')});if(a.requests)items.push({label:`查看${a.name}的好友申请（${a.requests}）`,click:()=>openDesktop(a.id,'friends')});}
  items.push({type:'separator'},{label:'打开聊天',click:()=>openDesktop()},{label:'查看历史聊天',click:()=>{showAll();openHistory()}},{type:'separator'},{label:'退出知交信使',click:()=>app.quit()});
  tray.setContextMenu(Menu.buildFromTemplate(items));
 }
 function updateInbox(state){desktopState=state;let changed=false;for(const a of state.agents||[])if(ui.seen[a.id]===undefined){ui.seen[a.id]=conversation(state,a.id).at(-1)?.id||'';changed=true}if(changed)saveUI();inbox=summarizeInbox(state,ui.seen);refreshTray()}
-function hideAll(){ui.hidden=true;saveUI();for(const pet of pets.values())pet.webContents.send('desktop-open','collapse');for(const win of [...pets.values(),...histories.values(),...Array.from(visitors.values(),v=>v.win)])win.hide();refreshTray()}
+function hideAll(){ui.hidden=true;saveUI();for(const pet of pets.values())pet.webContents.send('desktop-open','collapse');for(const win of [...pets.values(),...histories.values(),...Array.from(visitors.values(),v=>v.win),...(friendWindow?[friendWindow]:[])])win.hide();refreshTray()}
 function openDesktop(id,view='chat'){showAll();const pet=pets.get(id)||pets.values().next().value;if(!pet)return;pet.show();pet.focus();const open=()=>{if(!pet.isDestroyed())pet.webContents.send('desktop-open',view)};if(pet.webContents.isLoadingMainFrame())pet.webContents.once('did-finish-load',open);else open()}
 
 const {expandedBounds,characterCenter,conversationPlacement,visitorBounds}=require('./window-placement.cjs');
+let friendWindow=null,friendPeer='';
 let service,tray,setup,visitorTimer,pickVisitors,visitorsBusy=false,quitting=false;
 const visitors=new Map();
 const pets=new Map(),histories=new Map(),placements=new Map();
@@ -48,6 +49,21 @@ function openHistory(id){
   history.on('close',e=>{if(!quitting){e.preventDefault();history.hide()}});
  }
  history.show();history.focus();
+}
+function openFriend(peer){
+ if(typeof peer!=='string'||!desktopState.cloud?.friends?.includes(peer))return;
+ friendPeer=peer;
+ if(!friendWindow||friendWindow.isDestroyed()){
+  const pet=pets.values().next().value;let area=screen.getPrimaryDisplay().workArea;
+  const bounds=pet?.getBounds(),center=bounds?characterCenter(bounds,placements.get(pet)||'left'):{x:area.x+area.width,y:area.y+area.height/2};
+  if(bounds)area=screen.getDisplayNearestPoint(center).workArea;
+  const width=Math.min(780,area.width),height=Math.min(720,area.height);
+  friendWindow=new BrowserWindow({width,height,minWidth:560,minHeight:480,x:Math.max(area.x,Math.min(center.x-width-90,area.x+area.width-width)),y:Math.max(area.y,Math.min(Math.round(center.y-height/2),area.y+area.height-height)),title:'知交信使 · 好友聊天',backgroundColor:'#24211e',show:false,webPreferences:preferences});
+  const win=friendWindow;win.loadURL(url+'/?friend='+encodeURIComponent(peer));
+  win.once('ready-to-show',()=>{if(!win.isDestroyed()){win.show();win.focus()}});
+  win.on('close',event=>{if(!quitting){event.preventDefault();win.hide()}});
+  win.on('closed',()=>{if(friendWindow===win)friendWindow=null});
+ }else{friendWindow.show();friendWindow.focus();friendWindow.webContents.send('friend-selected',peer)}
 }
 function createPets(agents){
  const work=screen.getPrimaryDisplay().workArea;
@@ -116,7 +132,7 @@ app.whenReady().then(async()=>{
  ipcMain.handle('open-visit-link',async(_event,value)=>{if(typeof value!=='string'||value.length>2000)throw Error('Invalid link');const target=new URL(value);if(target.protocol!=='https:'||target.username||target.password)throw Error('Only HTTPS links are supported');await shell.openExternal(target.href)});
  ipcMain.handle('finish-registration',async()=>{const current=await (await fetch(url+'/api/state')).json();if(!current.registrationComplete)throw Error('请先完成注册');createPets(current.agents);setup?.close()});
  ipcMain.handle('approve-client-update',async(e,{id,confirm}={})=>{
-  const win=BrowserWindow.fromWebContents(e.sender);if(confirm!==true||!win?.isVisible()||!win.isFocused()||![...pets.values()].includes(win)||typeof id!=='string'||!/^[-a-zA-Z0-9]+$/.test(id))throw Error('请由主人在桌面确认升级');
+  const win=BrowserWindow.fromWebContents(e.sender);if(confirm!==true||!win?.isVisible()||!win.isFocused()||![...pets.values(),friendWindow].includes(win)||typeof id!=='string'||!/^[-a-zA-Z0-9]+$/.test(id))throw Error('请由主人在桌面确认升级');
   if(!service||service.killed)throw Error('本机服务由其他进程启动，请先停止单独的 npm start，再重开桌面客户端后升级');
   const response=await fetch(url+'/api/update-invitations/prepare',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({id,confirm:true})});const result=await response.json();if(!response.ok)throw Error(result.error);
   if(result.file!==path.join(__dirname,'.data','update-jobs',id+'.json'))throw Error('升级任务路径无效');
@@ -124,6 +140,9 @@ app.whenReady().then(async()=>{
   try{const env={...process.env,PATH:'/opt/homebrew/bin:/usr/local/bin:'+process.env.PATH};delete env.ELECTRON_RUN_AS_NODE;const updater=spawn('node',[path.join(__dirname,'scripts/update-approved.mjs'),result.file,String(process.pid)],{cwd:__dirname,env,detached:true,stdio:['ignore',fd,fd]});await new Promise((resolve,reject)=>{updater.once('spawn',resolve);updater.once('error',reject)});updater.unref();setTimeout(()=>app.quit(),300);return {started:true};}
   catch(error){await fetch(url+'/api/update-invitations/launch-failed',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({id})});throw Error('更新器未启动，客户端保持运行，请手动检查日志');}finally{fs.closeSync(fd)}
  });
+ ipcMain.on('open-friend',(_event,peer)=>openFriend(peer));
+ ipcMain.on('friend-read',async(event,{peer,id}={})=>{if(!friendWindow||event.sender!==friendWindow.webContents||!friendWindow.isVisible()||!friendWindow.isFocused()||peer!==friendPeer)return;try{await fetch(url+'/api/cloud/direct-read',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({to:peer,id})})}catch(error){lifecycleLog('friend-read-failed',error.message)}});
+ ipcMain.on('open-agent',(_event,view)=>openDesktop(undefined,['chat','friends','inbox','updates','interactions','visits'].includes(view)?view:'chat'));
  ipcMain.handle('desktop-status',()=>({...inbox,hidden:ui.hidden}));
  ipcMain.on('desktop-hide',e=>{if([...pets.values(),...histories.values()].includes(BrowserWindow.fromWebContents(e.sender)))hideAll()});
  ipcMain.on('desktop-read',(e,{agentId,lastId}={})=>{
@@ -138,7 +157,7 @@ app.whenReady().then(async()=>{
  visitorTimer=setInterval(()=>void syncVisitors(),1000);void syncVisitors();
  tray=new Tray(nativeImage.createFromPath(path.join(__dirname,'assets/tray/idle.png')).resize({width:22,height:22}));refreshTray();
  app.on('activate',()=>{if(!ui.hidden)showAll()});
- disposeRecovery=installDesktopRecovery({powerMonitor,screen,windows:()=>recoveryWindows({hidden:ui.hidden,setup,pets:[...pets.values()],visitors:Array.from(visitors.values(),v=>v.win),histories:[...histories.values()]}),isQuitting:()=>quitting,log:lifecycleLog});
+ disposeRecovery=installDesktopRecovery({powerMonitor,screen,windows:()=>recoveryWindows({hidden:ui.hidden,setup,pets:[...pets.values()],visitors:Array.from(visitors.values(),v=>v.win),histories:[...histories.values(),...(friendWindow?[friendWindow]:[])]}),isQuitting:()=>quitting,log:lifecycleLog});
 }).catch(e=>{console.error(e);app.quit()});
 app.on('window-all-closed',()=>{});
 app.on('before-quit',()=>{lifecycleLog('before-quit');quitting=true;disposeRecovery?.();clearInterval(visitorTimer);service?.kill()});

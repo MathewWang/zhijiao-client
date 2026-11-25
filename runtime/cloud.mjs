@@ -61,17 +61,18 @@ export class DesktopCloud {
    this.config.agent=normalizeAgent({...agent,publishProfile:true});
    const card=JSON.stringify(this.profile(agent));
    if(card!==this.profileJSON){await this.client.api('/v1/profile',{profile:JSON.parse(card),publishProfile:true});this.profileJSON=card;this.save();}
-   const data=await this.client.api('/v1/sync',{online:agent.enabled,interactionProtocol:2,updateProtocol:1});
+   const data=await this.client.api('/v1/sync',{online:agent.enabled,interactionProtocol:2,updateProtocol:1,directProtocol:1});
    this.publish({...data,connected:true,error:''});
-   if(agent.enabled&&!this.processing&&!this.isPaused()){
+   if(!this.processing&&!this.isPaused()){
     this.processing=this.client.tick(this.abort.signal).catch(e=>this.publish({error:e.message})).finally(()=>{this.processing=null;if(!this.closed)this.refreshMessages();});
    }
    this.refreshMessages();
   }catch(e){this.publish({connected:false,error:e.message});}finally{this.polling=false;}
  }
  refreshMessages(){
+  if(this.closed||!this.client)return;
   const incoming=this.client.db.prepare("SELECT id,json,status,error,result FROM inbox WHERE status IN ('waiting_owner','drafting','ready') OR rowid IN (SELECT rowid FROM inbox ORDER BY rowid DESC LIMIT 50) ORDER BY rowid DESC").all().map(r=>({...r,message:JSON.parse(r.json),json:undefined}));
-  this.publish({messages:incoming});
+  this.publish({messages:incoming.filter(r=>r.message.kind!=='direct'),direct:this.client.directSnapshot()});
   this.reportOwner();
  }
  reportOwner(){
@@ -81,7 +82,7 @@ export class DesktopCloud {
   const mark=this.client.db.prepare('INSERT OR IGNORE INTO desktop_reports(key) VALUES(?)');
   for(const row of this.client.db.prepare("SELECT * FROM inbox WHERE status IN ('waiting_owner','done','failed') ORDER BY rowid").all()){
    const key=`${this.config.id}:${row.id}:${row.status}`;if(has.get(key))continue;
-   const m=JSON.parse(row.json);const peer=this.state.directory.find(d=>d.id===m.sender);const name=peer?.profile?.name||peer?.name||'好友';
+   const m=JSON.parse(row.json);if(m.kind==='direct')continue;const peer=this.state.directory.find(d=>d.id===m.sender);const name=peer?.profile?.name||peer?.name||'好友';
    let text;
    if(row.status==='waiting_owner')text=`${name}有个问题需要你确认。我会等你决定如何答复。`;
    else if(row.status==='failed')text=`处理${name}的消息失败：${row.error||'原因未知'}。没有自动重试，请检查后再处理。`;
@@ -94,7 +95,14 @@ export class DesktopCloud {
  async action(path,body){
   if(!this.client)throw Error('请先连接云端');
   const routes={request:'/v1/requests',decision:'/v1/requests/decision',visit:'/v1/visits','visit-action':'/v1/visits/action'};
-  if(['owner-reply','owner-decline','draft'].includes(path)){
+  if(path==='direct-read'){this.client.markDirectRead(body.to,body.id);this.refreshMessages();return;}
+  if(path==='direct'){
+   if(!this.state.friends.includes(body.to))throw Error('请先添加好友');
+   if(this.state.directory.find(p=>p.id===body.to)?.directProtocol!==1)throw Error('对方客户端需升级后才能接收主人直聊');
+   if(typeof body.key!=='string'||!/^[-a-zA-Z0-9]{1,100}$/.test(body.key))throw Error('消息标识无效');
+   this.client.queue(body.to,body.text,'direct',null,body.key);this.refreshMessages();
+   try{await this.client.flush();}catch(e){this.publish({error:'直聊消息已保存在本机，将在连接恢复后继续投递。'+e.message});}finally{this.refreshMessages();}
+  }else if(['owner-reply','owner-decline','draft'].includes(path)){
    const agent=this.getAgent(this.config.localAgentId);if(!agent?.enabled)throw Error('请先让助理上线');
    if(path==='draft'){
     this.config.agent=normalizeAgent({...agent,publishProfile:true});

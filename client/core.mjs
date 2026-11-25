@@ -15,6 +15,7 @@ export class MessengerClient {
    CREATE TABLE IF NOT EXISTS outbox(key TEXT PRIMARY KEY, json TEXT NOT NULL, delivered INTEGER NOT NULL DEFAULT 0);`);
   if(!this.db.prepare('PRAGMA table_info(inbox)').all().some(c=>c.name==='owner_confirmed'))this.db.exec('ALTER TABLE inbox ADD COLUMN owner_confirmed INTEGER NOT NULL DEFAULT 0');
   if(!this.db.prepare('PRAGMA table_info(outbox)').all().some(c=>c.name==='server_id'))this.db.exec('ALTER TABLE outbox ADD COLUMN server_id TEXT');
+  if(!this.db.prepare('PRAGMA table_info(inbox)').all().some(c=>c.name==='direct_read_at'))this.db.exec('ALTER TABLE inbox ADD COLUMN direct_read_at INTEGER');
   // A crash during inference is ambiguous; never silently repeat a potentially billable call.
   if(recoverProcessing)this.db.prepare("UPDATE inbox SET status='waiting_owner',error='建议生成中断，请重新确认' WHERE status='drafting'").run();
   if(recoverProcessing)this.db.prepare("UPDATE inbox SET status='failed',error='Client 在模型执行期间退出，结果未知；请人工检查后重试' WHERE status='processing'").run();
@@ -25,7 +26,9 @@ export class MessengerClient {
  }
  queue(to,text,kind='question',replyTo=null,key=randomUUID()){
   if(typeof text!=='string'||!text.trim()||text.length>16000)throw Error('消息需为 1–16000 字符');
-  const b={to,text,kind,replyTo,key};this.db.prepare('INSERT OR IGNORE INTO outbox(key,json) VALUES(?,?)').run(key,JSON.stringify(b));return key;
+  if(!['question','reply','direct'].includes(kind))throw Error('无效消息类型');
+  const prior=this.db.prepare('SELECT json FROM outbox WHERE key=?').get(key);if(prior){const old=JSON.parse(prior.json);if(old.to!==to||old.text!==text||old.kind!==kind||(old.replyTo||null)!==replyTo)throw Error('消息标识已用于其他内容');return key;}
+  const b={to,text,kind,replyTo,key,...(kind==='direct'?{createdAt:Date.now()}:{})};this.db.prepare('INSERT OR IGNORE INTO outbox(key,json) VALUES(?,?)').run(key,JSON.stringify(b));return key;
  }
  async flush(){
   for(const row of this.db.prepare('SELECT * FROM outbox WHERE delivered=0 ORDER BY rowid').all()){
@@ -35,9 +38,10 @@ export class MessengerClient {
  async tick(signal){
   await this.flush();
   await this.deliverReady();
-  const {message:m}=await this.api('/v1/inbox/pull',{});if(!m)return false;
+  const {message:m}=await this.api('/v1/inbox/pull',{directProtocol:1});if(!m)return false;
   this.db.prepare("INSERT OR IGNORE INTO inbox(id,json,status) VALUES(?,?,'received')").run(m.id,JSON.stringify(m));
   let local=this.db.prepare('SELECT * FROM inbox WHERE id=?').get(m.id);
+  if(m.kind==='direct'){this.db.prepare("UPDATE inbox SET status='done' WHERE id=?").run(m.id);await this.api('/v1/inbox/ack',{id:m.id});return true;}
   if(this.requireOwnerApproval&&m.kind==='question'&&local.status==='received'){
    this.db.prepare("UPDATE inbox SET status='waiting_owner' WHERE id=?").run(m.id);
    await this.api('/v1/inbox/ack',{id:m.id});return true;
@@ -98,6 +102,16 @@ export class MessengerClient {
    this.db.prepare("UPDATE inbox SET status='ready',result=? WHERE id=?").run(result,id);
    this.queue(m.sender,result,'reply',id,`reply:${id}`);await this.flush();this.db.prepare("UPDATE inbox SET status='done' WHERE id=?").run(id);
   }catch(e){this.db.prepare("UPDATE inbox SET status='failed',error=? WHERE id=? AND status='processing'").run(e.message,id);throw e;}
+ }
+ directSnapshot(){
+  const incoming=this.db.prepare("SELECT rowid AS sequence,id,json,direct_read_at FROM inbox WHERE json_extract(json,'$.kind')='direct' ORDER BY rowid DESC LIMIT 1000").all().map(r=>{const m=JSON.parse(r.json);return {sequence:r.sequence,id:r.id,peer:m.sender,text:m.text,incoming:true,createdAt:m.created_at||0,read:!!r.direct_read_at,status:'delivered'}});
+  const outgoing=this.db.prepare("SELECT key,json,delivered,server_id FROM outbox WHERE json_extract(json,'$.kind')='direct' ORDER BY rowid DESC LIMIT 1000").all().map(r=>{const m=JSON.parse(r.json);return {id:r.key,peer:m.to,text:m.text,incoming:false,createdAt:m.createdAt||0,read:true,status:r.delivered?'delivered':'queued'}});
+  const unread=this.db.prepare("SELECT json_extract(json,'$.sender') AS peer,count(*) AS count FROM inbox WHERE json_extract(json,'$.kind')='direct' AND direct_read_at IS NULL GROUP BY peer").all();
+  return {messages:[...incoming,...outgoing].sort((a,b)=>a.createdAt-b.createdAt),unread:Object.fromEntries(unread.map(r=>[r.peer,r.count]))};
+ }
+ markDirectRead(peer,id){
+  const target=this.db.prepare("SELECT rowid FROM inbox WHERE id=? AND json_extract(json,'$.kind')='direct' AND json_extract(json,'$.sender')=?").get(id,peer);if(!target)return;
+  this.db.prepare("UPDATE inbox SET direct_read_at=COALESCE(direct_read_at,?) WHERE rowid<=? AND json_extract(json,'$.kind')='direct' AND json_extract(json,'$.sender')=?").run(Date.now(),target.rowid,peer);
  }
  close(){this.db.close();}
 }

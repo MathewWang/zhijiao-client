@@ -151,7 +151,7 @@ const server=http.createServer(async(req,res)=>{
  if(p==='/api/update-invitations/action'){if(!['decline','cancel'].includes(b.action))throw Error('同意更新必须由本机桌面确认');const result=await cloud.client.api('/v1/update-invitations/action',{id:b.id,action:b.action});await cloud.poll();return send(res,200,result)}
  if(p==='/api/update-invitations/prepare'){
   if(b.confirm!==true||updatePreparing)throw Error('请由主人明确确认本次升级');if(cloud.config?.relay!=='https://agentmen.cn')throw Error('自动升级目前仅支持官方知交信使服务');assertUpdateIdle();updatePreparing=true;notify();
-  try{await cloud.poll();assertUpdateIdle();const item=cloud.state.updateInvitations?.find(i=>i.id===b.id&&i.to===cloud.config.id&&i.status==='pending');if(!item)throw Error('升级邀请已变化，请刷新后再决定');const release=await fetchRelease();if(release.version!==item.targetVersion)throw Error('邀请版本不是当前官方发布版本，请让好友重新邀请');
+  try{await cloud.poll();assertUpdateIdle();const item=cloud.state.updateInvitations?.find(i=>i.id===b.id&&i.to===cloud.config.id&&i.status==='pending');if(!item)throw Error('升级邀请已变化，请刷新后再决定');const release=await fetchRelease();if(release.version!==item.targetVersion)throw Error('官方版本刚刚更新，请返回后重新打开升级确认；原邀请会自动同步，无需好友重发');
    const pinned=pinOfficialUpdate(root,item.targetVersion,updateInfo.currentVersion);assertUpdateIdle();const job={id:item.id,targetVersion:item.targetVersion,...pinned,root,configPath:cloud.path,runtimePid:process.pid,approved:true,status:'approved',createdAt:Date.now()};const file=join(updateJobsDir,item.id+'.json');saveUpdateJob(file,job);await cloud.client.api('/v1/update-invitations/action',{id:item.id,action:'accept'});await cloud.poll();return send(res,200,{file});
   }catch(e){updatePreparing=false;notify();throw e}
  }

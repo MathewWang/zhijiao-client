@@ -16,15 +16,18 @@ const saveUI=()=>{try{const temp=uiFile+'.tmp';fs.writeFileSync(temp,JSON.string
 function publishInbox(){const value={...inbox,hidden:ui.hidden};for(const win of [...pets.values(),...histories.values(),...(friendWindow?[friendWindow]:[])])if(!win.isDestroyed())win.webContents.send('desktop-status',value)}
 function refreshTray(){
  publishInbox();if(!tray)return;
- const signature=JSON.stringify([ui.hidden,inbox]);if(signature===traySignature)return;traySignature=signature;
+ const signature=JSON.stringify([ui.hidden,inbox,desktopState.peerUnread]);if(signature===traySignature)return;traySignature=signature;
  const image=nativeImage.createFromPath(path.join(__dirname,'assets/tray',inbox.total?'unread.png':'idle.png')).resize({width:22,height:22});
  tray.setImage(image);tray.setTitle(inbox.total?String(Math.min(inbox.total,99))+(inbox.total>99?'+':''):'');
  tray.setToolTip(`知交信使 · ${inbox.messages+(inbox.peerMessages||inbox.direct)} 条消息 · ${inbox.plays} 个玩法 · ${inbox.updates} 个升级邀请`);
- const items=[{label:'知交信使 · 后台运行中',enabled:false},{label:ui.hidden?'显示桌面人物':'隐藏桌面人物',click:()=>ui.hidden?showAll():hideAll()},{type:'separator'}];
- items.push({label:'打开好友',click:()=>openDesktop(undefined,'friends')});
- if(!inbox.total)items.push({label:'暂时没有新消息或待查收玩法',enabled:false});
- for(const a of inbox.agents){if(a.peerMessages)items.push({label:`查看好友消息（${a.peerMessages}）`,click:()=>openFriend(Object.keys(desktopState.peerUnread||{}).find(id=>desktopState.peerUnread[id]>0))});else if(a.direct)items.push({label:`查看好友直聊（${a.direct}）`,click:()=>openFriend(Object.keys(desktopState.cloud?.direct?.unread||{}).find(id=>desktopState.cloud.direct.unread[id]>0))});if(a.messages)items.push({label:`查看${a.name}的消息（${a.messages}）`,click:()=>openDesktop(a.id,'chat')});if(a.interactions)items.push({label:`查收${a.name}的玩法（${a.interactions}）`,click:()=>openFriend(desktopState.cloud?.interactions?.find(i=>i.to===desktopState.cloud.deviceId&&['pending','failed','ready'].includes(i.status))?.from)});if(a.visits)items.push({label:`查看${a.name}的敲门（${a.visits}）`,click:()=>openFriend(desktopState.cloud?.visits?.find(i=>i.to===desktopState.cloud.deviceId&&i.status==='pending')?.from)});if(a.updates)items.push({label:`查看${a.name}的升级邀请（${a.updates}）`,click:()=>openFriend(desktopState.cloud?.updateInvitations?.find(i=>i.to===desktopState.cloud.deviceId&&i.status==='pending')?.from)});if(a.requests)items.push({label:`查看${a.name}的好友申请（${a.requests}）`,click:()=>openDesktop(a.id,'friends')});}
- items.push({type:'separator'},{label:'打开聊天',click:()=>openDesktop()},{label:'查看历史聊天',click:()=>openFriend('agent')},{type:'separator'},{label:'退出知交信使',click:()=>app.quit()});
+ const items=[{label:'知交信使 · 后台运行中',enabled:false},{label:'打开聊天',click:()=>setup?setup.show():openFriend(friendPeer||'agent')},{label:'显示桌面人物',click:()=>{friendWindow?.hide();showAll()}},{label:'隐藏桌面人物，继续收信',enabled:!ui.hidden,click:hideAll},{type:'separator'}];
+ const peers=Object.entries(desktopState.peerUnread||desktopState.cloud?.direct?.unread||{}).filter(([,count])=>count>0);
+ const knownPeers=new Set(peers.map(([peer])=>peer));if(!desktopState.peerUnread)for(const item of [...(desktopState.cloud?.interactions||[]),...(desktopState.cloud?.visits||[]),...(desktopState.cloud?.updateInvitations||[])])if(item.to===desktopState.cloud?.deviceId&&['pending','ready','failed'].includes(item.status)&&!knownPeers.has(item.from)){peers.push([item.from,1]);knownPeers.add(item.from)}
+ for(const [peer,count] of peers){const p=desktopState.cloud?.directory?.find(p=>p.id===peer);items.push({label:`${p?.profile?.name||p?.name||'好友'} · ${count} 条新动态`,click:()=>openFriend(peer)})}
+ for(const a of inbox.agents)if(a.messages)items.push({label:`${a.name} · ${a.messages} 条新消息`,click:()=>openDesktop(a.id,'chat')});
+ const requests=inbox.agents.reduce((n,a)=>n+a.requests,0);if(requests)items.push({label:`好友申请 · ${requests} 条待处理`,click:()=>openDesktop(undefined,'friends')});
+ if(!inbox.total)items.push({label:'暂时没有新消息',enabled:false});
+ items.push({type:'separator'},{label:'添加好友 / 好友申请',click:()=>openDesktop(undefined,'friends')},{label:'退出知交信使',click:()=>app.quit()});
  tray.setContextMenu(Menu.buildFromTemplate(items));
 }
 function updateInbox(state){desktopState=state;let changed=false;for(const a of state.agents||[])if(ui.seen[a.id]===undefined){ui.seen[a.id]=conversation(state,a.id).at(-1)?.id||'';changed=true}if(changed)saveUI();inbox=summarizeInbox(state,ui.seen);refreshTray();updateEdgeNotices(state)}
@@ -74,7 +77,7 @@ function openFriend(peer){
   const win=friendWindow;win.loadURL(url+'/?friend='+encodeURIComponent(peer));
   win.once('ready-to-show',()=>{if(!win.isDestroyed()){win.show();win.focus()}});
   win.on('show',()=>{for(const pet of pets.values())if(!pet.isDestroyed())pet.hide()});
-  win.on('close',event=>{if(!quitting){event.preventDefault();win.hide();showAll()}});
+  win.on('close',event=>{if(!quitting){event.preventDefault();win.hide();if(!ui.hidden)showAll();else refreshTray()}});
   win.on('closed',()=>{if(friendWindow===win)friendWindow=null});
  }else{friendWindow.show();friendWindow.focus();friendWindow.webContents.send('friend-selected',peer)}
 }

@@ -10,3 +10,5 @@
 .unified-agent-pane .recent-bubble{display:block}.unified-agent-pane .recent-bubble>p{width:fit-content}.unified-agent-pane .recent-bubble.user>p{margin-left:auto}.unified-agent-pane .recent-bubble>[role=group]{margin-top:10px}
 
 .friend-conversation-list .conversation-presence{display:flex;align-items:center;gap:5px}.conversation-presence i{width:6px;height:6px;border-radius:50%;background:#857b6d;flex-shrink:0}.conversation-presence i.online{background:#98bc88}
+
+.timeline-entry>.interaction-panel,.timeline-entry>.visits-panel{overflow:visible;padding:0;margin:0;background:none;flex:none}.timeline-entry{min-width:0;scroll-margin:20px}

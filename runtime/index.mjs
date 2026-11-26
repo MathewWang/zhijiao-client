@@ -5,7 +5,7 @@ import {encodeNewsMessage,discussionFor,DISCUSSION_TTL} from '../shared/news-mes
 import {friendMemoryOverview,readFriendMemory,runFriendAwareTurn} from './friend-memory.mjs';
 import {createSocialExecutor,normalizeSocialAction} from './social-actions.mjs';
 import {peerUnread,markPeerActivities} from '../shared/conversations.mjs';
-import {pinOfficialUpdate,saveUpdateJob,flushUpdateReceipts} from './client-updater.mjs';
+import {pinOfficialUpdate,saveUpdateJob,flushUpdateReceipts,readUpdateProgress} from './client-updater.mjs';
 import {InteractionRuntime,PLAY_CATALOG,wrapPresentation} from './interaction-runtime.mjs';
 import {normalizePlan} from '../shared/interactions.mjs';
 import {fetchRelease,notifyRelease} from './updates.mjs';
@@ -45,7 +45,7 @@ const updateJobsDir=join(root,'.data','update-jobs');
 const updateInfo={currentVersion:JSON.parse(readFileSync(join(root,'package.json'),'utf8')).version,latestVersion:null,lastCheckedAt:null,error:''};
 let checkingUpdates=false;
 async function checkUpdates(){if(checkingUpdates)return;checkingUpdates=true;try{const release=await fetchRelease();updateInfo.latestVersion=release.version;updateInfo.lastCheckedAt=Date.now();updateInfo.error='';if(notifyRelease(state,release,updateInfo.currentVersion,addMessage))persist();else notify();}catch{updateInfo.error='暂时无法检查更新，稍后会自动重试';notify();}finally{checkingUpdates=false;}}
-const snapshot=()=>{if(expireVisits(state.visits))save();const conversationState={cloud:cloud?.snapshot(),localPlayDrafts:interactions?.drafts()||[]};return ({...state,peerUnread:peerUnread(conversationState,state.peerSeen||{}),updates:updateInfo,updatePreparing,playTemplates:interactions?.templates()||[],localPlayDrafts:interactions?.drafts()||[],interactionEffects:interactions?.snapshot()||[],playCatalog:PLAY_CATALOG,cloud:cloud?.snapshot(),engines,presets,directory:state.agents.filter(a=>a.public!==false).map(publicCard),busy:[...jobs.keys()]})};
+const snapshot=()=>{if(expireVisits(state.visits))save();const conversationState={cloud:cloud?.snapshot(),localPlayDrafts:interactions?.drafts()||[]};return ({...state,peerUnread:peerUnread(conversationState,state.peerSeen||{}),updates:{...updateInfo,progress:readUpdateProgress(updateJobsDir)},updatePreparing,playTemplates:interactions?.templates()||[],localPlayDrafts:interactions?.drafts()||[],interactionEffects:interactions?.snapshot()||[],playCatalog:PLAY_CATALOG,cloud:cloud?.snapshot(),engines,presets,directory:state.agents.filter(a=>a.public!==false).map(publicCard),busy:[...jobs.keys()]})};
 function notify(){for(const c of clients)c.write(`data: ${JSON.stringify(snapshot())}\n\n`)}
 function persist(){save();notify()}
 function addMessage(agentId,role,text,extra={}){const m={id:randomUUID(),agentId,role,text,createdAt:Date.now(),...extra};state.messages.push(m);return m}
@@ -206,7 +206,7 @@ const server=http.createServer(async(req,res)=>{
   if(!['skip','connected'].includes(b.action))throw Error('无效引导操作');
   if(b.action==='connected'&&!cloud.state.registered)throw Error('请先连接云端');
   state.cloudOnboarding=b.action==='skip'?'skipped':'connected';
-  if(b.action==='skip')addMessage(state.primaryAgentId,'assistant','你已跳过云端连接，目前可以在本机使用。以后点击人物 → 右上角设置 → 填写邀请码并连接云端，就能添加好友、聊天和串门。');
+  if(b.action==='skip')addMessage(state.primaryAgentId,'assistant','你已跳过云端连接，目前可以在本机使用。以后从菜单栏打开聊天 → Agent → 设置 → 填写邀请码并连接云端，就能添加好友、聊天和串门。');
   persist();return send(res,200,{ok:true});
  }
  if(p==='/api/cloud/connect'){await cloud.connect(b);return send(res,200,{ok:true});}

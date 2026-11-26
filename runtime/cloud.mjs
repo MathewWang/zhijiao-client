@@ -16,7 +16,7 @@ export class DesktopCloud {
   }
  }
  snapshot(){return {...this.state,interactions:this.state.interactions.map(i=>{const {artifact,...plan}=i.plan;return {...i,plan}})};}
- publish(patch){Object.assign(this.state,patch);this.onChange();}
+ publish(patch){if(this.closed)return;Object.assign(this.state,patch);this.onChange();}
  save(){writeFileSync(this.path,JSON.stringify(this.config,null,2),{mode:0o600});}
  async connect({agentId,relay='https://agentmen.cn',deviceName,inviteToken,publishProfile}){
   if(publishProfile!==true)throw Error('请确认公开设备名、助理名字、形象和简介');
@@ -62,7 +62,9 @@ export class DesktopCloud {
    this.config.agent=normalizeAgent({...agent,publishProfile:true});
    const card=JSON.stringify(this.profile(agent));
    if(card!==this.profileJSON){await this.client.api('/v1/profile',{profile:JSON.parse(card),publishProfile:true});this.profileJSON=card;this.save();}
+   if(this.closed)return;
    const data=await this.client.api('/v1/sync',{online:agent.enabled,interactionProtocol:2,updateProtocol:1,directProtocol:1});
+   if(this.closed)return;
    this.publish({...data,...this.rememberSocial(data),connected:true,error:''});
    if(!this.processing&&!this.isPaused()){
     this.processing=this.client.tick(this.abort.signal).catch(e=>this.publish({error:e.message})).finally(()=>{this.processing=null;if(!this.closed)this.refreshMessages();});

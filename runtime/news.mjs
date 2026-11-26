@@ -1,4 +1,12 @@
 import {createHash} from 'node:crypto';
+import {normalizeArticle} from '../shared/news-messages.mjs';
+export async function fetchWearitNews({client,count=3,language='zh-CN',timezone='Asia/Shanghai',now=Date.now()}={}){
+ if(!client)throw Error('请先连接云端，才能获取 WearIT 当天新闻');
+ let data;try{data=await client.api('/v1/news/daily?'+new URLSearchParams({count:String(count),language,timezone}))}catch(e){if(e.message==='接口不存在')throw Error('云端尚未部署 WearIT 新闻接口，请联系管理员');throw e}
+ const parts=Object.fromEntries(new Intl.DateTimeFormat('en-CA',{timeZone:timezone,year:'numeric',month:'2-digit',day:'2-digit'}).formatToParts(new Date(now)).map(p=>[p.type,p.value]));const day=`${parts.year}-${parts.month}-${parts.day}`;
+ if(data.source!=='WearIT'||data.day!==day||data.timezone!==timezone||!Array.isArray(data.articles)||data.articles.length>count)throw Error('WearIT 当天新闻响应无效，请稍后重试');
+ return data.articles.map(normalizeArticle);
+}
 import {fetch as networkFetch,EnvHttpProxyAgent} from 'undici';
 const newsDispatcher=new EnvHttpProxyAgent();
 const fetchRSS=(url,options)=>networkFetch(url,{...options,dispatcher:newsDispatcher});

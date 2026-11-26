@@ -1,6 +1,6 @@
 {
   "name": "zhijiao-client",
-  "version": "0.7.15",
+  "version": "0.7.16",
   "private": true,
   "type": "module",
   "main": "electron.cjs",

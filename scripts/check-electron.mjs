@@ -39,7 +39,7 @@ let app;
 try{
  await new Promise((resolve,reject)=>{server.once('error',reject);server.listen(4317,'127.0.0.1',resolve)});
  for(const file of ['electron.cjs','edge-presence.cjs','effect-window.cjs','preload.cjs','desktop-inbox.cjs','desktop-recovery.cjs','window-placement.cjs'])copyFileSync(join(root,file),join(temp,file));
- writeFileSync(join(temp,'electron.cjs'),readFileSync(join(temp,'electron.cjs'),'utf8')+'\nglobal.__edgePresence=edgePresence;clearInterval(edgeTimer);\n');
+ writeFileSync(join(temp,'electron.cjs'),readFileSync(join(temp,'electron.cjs'),'utf8')+'\nglobal.__edgePresence=edgePresence;app.whenReady().then(()=>clearInterval(edgeTimer));\n');
  cpSync(join(root,'assets'),join(temp,'assets'),{recursive:true});cpSync(join(root,'shared'),join(temp,'shared'),{recursive:true});
  writeFileSync(join(temp,'main.cjs'),`const {app}=require('electron');app.setPath('userData',${JSON.stringify(join(temp,'user-data'))});require('./electron.cjs');`);
  app=await _electron.launch({executablePath:require('electron'),args:[join(temp,'main.cjs')],env:{...process.env,ELECTRON_RUN_AS_NODE:''}});

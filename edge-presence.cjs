@@ -24,7 +24,7 @@ function createEdgePresence({screen,onState=()=>{},suppressed=()=>false,isDraggi
  function reveal(){for(const r of records.values()){r.home=clampBounds(r.home,workFor(r.home));r.win.setBounds(r.home);r.direction=1;r.lastActive=now();phase(r,'shown');r.win.showInactive()}}
  function drag(id,active){const r=records.get(id);if(!r)return;if(active){r.move=null;phase(r,'dragging')}else{r.home=clampBounds(r.win.getBounds(),workFor(r.win.getBounds()));r.work=workFor(r.home);edgeBounds(r);r.lastActive=now();phase(r,'shown')}}
  function tick(time=now()){
-  if(disposed||suppressed())return;
+  if(disposed||!records.size||suppressed())return;
   const cursor=screen.getCursorScreenPoint();
   for(const [id,r] of records){if(r.win.isDestroyed()){records.delete(id);continue}if(isDragging(r.win)||r.phase==='suppressed')continue;
    if(r.phase==='leaving'||r.phase==='entering'){

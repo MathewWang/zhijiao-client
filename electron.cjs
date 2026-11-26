@@ -44,7 +44,7 @@ const url='http://127.0.0.1:4317';
 const preferences={preload:path.join(__dirname,'preload.cjs'),contextIsolation:true,nodeIntegration:false};
 const edgePresence=createEdgePresence({screen,suppressed:()=>ui.hidden||!!friendWindow?.isVisible()||quitting,isDragging:win=>characterDrags.has(win),onState:(id,value)=>{const pet=pets.get(id);if(pet&&!pet.isDestroyed())pet.webContents.send('edge-presence',value)}});
 function updateEdgeNotices(state){for(const a of inbox.agents){const c=state.cloud?.agentId===a.id?state.cloud:null;const key=JSON.stringify([conversation(state,a.id).at(-1)?.id,c?.direct?.messages?.filter(m=>m.incoming&&!m.read).map(m=>m.id),state.peerUnread,c?.requests?.filter(r=>r.recipient===c.deviceId&&r.status==='pending').map(r=>r.id),c?.visits?.filter(v=>v.to===c.deviceId&&v.status==='pending').map(v=>v.id),c?.interactions?.filter(i=>i.to===c.deviceId&&['pending','ready','failed'].includes(i.status)).map(i=>[i.id,i.status])]);edgePresence.notice(a.id,key,a.unread+(a.peerMessages||a.direct)+a.requests+a.plays+a.updates)}}
-const edgeTimer=setInterval(()=>edgePresence.tick(),16);edgeTimer.unref?.();
+let edgeTimer;
 const effectPlayer=createEffectPlayer({BrowserWindow,screen,preferences,url});
 async function ready(){for(let i=0;i<80;i++){try{const r=await fetch(url+'/api/state');if(r.ok)return}catch{}await new Promise(r=>setTimeout(r,250))}throw Error('本地服务启动超时')}
 function openHistory(id){
@@ -128,6 +128,8 @@ app.on('web-contents-created',(_event,contents)=>{contents.on('render-process-go
 if(!app.requestSingleInstanceLock()){app.quit();}else{
 app.on('second-instance',showAll);
 app.whenReady().then(async()=>{
+ if(quitting)return;
+ edgeTimer=setInterval(()=>edgePresence.tick(),16);edgeTimer.unref?.();
  // macOS accessory apps keep their Tray entry and windows without a Dock icon.
  if(process.platform==='darwin')app.setActivationPolicy('accessory');
  // Generated opaque-origin frames must not send network traffic outside the local UI.
@@ -191,6 +193,6 @@ app.whenReady().then(async()=>{
  disposeRecovery=installDesktopRecovery({powerMonitor,screen,windows:()=>recoveryWindows({hidden:ui.hidden,setup,pets:[...pets.values()].filter(win=>edgePresence.isShown(win)),visitors:Array.from(visitors.values(),v=>v.win),histories:[...histories.values(),...(friendWindow?[friendWindow]:[])]}),isQuitting:()=>quitting,log:lifecycleLog});
 }).catch(e=>{console.error(e);app.quit()});
 app.on('window-all-closed',()=>{});
-app.on('before-quit',()=>{lifecycleLog('before-quit');quitting=true;effectPlayer.dispose();disposeRecovery?.();clearInterval(visitorTimer);service?.kill()});
+app.on('before-quit',()=>{lifecycleLog('before-quit');quitting=true;clearInterval(edgeTimer);edgePresence.dispose();effectPlayer.dispose();disposeRecovery?.();clearInterval(visitorTimer);service?.kill()});
 
 }

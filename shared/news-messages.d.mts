@@ -1,4 +1,4 @@
-export type NewsArticle={id:string;title:string;url:string;summary:string;source:string;publishedAt:number};
+export type NewsArticle={language?:'zh-CN'|'en'|'original';id:string;title:string;url:string;summary:string;source:string;publishedAt:number};
 export const DISCUSSION_TTL:number;
 export function normalizeArticle(value:unknown):NewsArticle;
 export function encodeNewsMessage(value:unknown):string;

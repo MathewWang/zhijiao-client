@@ -1,0 +1,3 @@
+export type NewsBlock={type:'paragraph'|'heading'|'quote';text:string;attribution?:string}|{type:'keyPoints';items:string[]}|{type:'stat';items:{label:string;value:string;note:string}[]}|{type:'comparison';left:{title:string;text:string;items:string[]};right:{title:string;text:string;items:string[]}}|{type:'image';url:string;alt:string;caption:string;credit:string};
+export type NewsContent={id:string;title:string;summary:string;source:string;url:string;publishedAt:number;language:string;contentLanguage:string;readMinutes:number|null;blocks:NewsBlock[];sources:{url:string;title:string;publisher:string}[]};
+export function normalizeNewsContent(value:unknown):NewsContent;

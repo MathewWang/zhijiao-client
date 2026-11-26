@@ -1,5 +1,11 @@
 import {createHash} from 'node:crypto';
 import {normalizeArticle} from '../shared/news-messages.mjs';
+import {normalizeNewsContent} from '../shared/news-content.mjs';
+export async function fetchWearitDetail({client,articleId,language='zh-CN'}={}){
+ if(!client)throw Error('请先连接云端以加载新闻正文');
+ let data;try{data=await client.api('/v1/news/detail?'+new URLSearchParams({articleId,language}))}catch(e){if(e.message==='接口不存在')throw Error('云端尚未部署 WearIT 详情接口，请联系管理员');throw e}
+ const article=normalizeNewsContent(data.article);if(article.id!==articleId||article.language!==language)throw Error('新闻正文与当前文章不匹配');return article;
+}
 export async function fetchWearitNews({client,count=3,language='zh-CN',timezone='Asia/Shanghai',now=Date.now()}={}){
  if(!client)throw Error('请先连接云端，才能获取 WearIT 当天新闻');
  let data;try{data=await client.api('/v1/news/daily?'+new URLSearchParams({count:String(count),language,timezone}))}catch(e){if(e.message==='接口不存在')throw Error('云端尚未部署 WearIT 新闻接口，请联系管理员');throw e}

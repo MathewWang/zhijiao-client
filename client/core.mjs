@@ -1,5 +1,6 @@
 import {DatabaseSync} from 'node:sqlite';
 import {randomUUID} from 'node:crypto';
+import {parseNewsMessage,discussionFor} from '../shared/news-messages.mjs';
 import {runAgent} from '../runtime/adapters.mjs';
 export function validateRelayURL(value){
  const u=new URL(value);
@@ -109,9 +110,14 @@ export class MessengerClient {
   const unread=this.db.prepare("SELECT json_extract(json,'$.sender') AS peer,count(*) AS count FROM inbox WHERE json_extract(json,'$.kind')='direct' AND direct_read_at IS NULL GROUP BY peer").all();
   return {messages:[...incoming,...outgoing].sort((a,b)=>a.createdAt-b.createdAt),unread:Object.fromEntries(unread.map(r=>[r.peer,r.count]))};
  }
- markDirectRead(peer,id){
+ markDirectRead(peer,id,roomId){
   const target=this.db.prepare("SELECT rowid FROM inbox WHERE id=? AND json_extract(json,'$.kind')='direct' AND json_extract(json,'$.sender')=?").get(id,peer);if(!target)return;
-  this.db.prepare("UPDATE inbox SET direct_read_at=COALESCE(direct_read_at,?) WHERE rowid<=? AND json_extract(json,'$.kind')='direct' AND json_extract(json,'$.sender')=?").run(Date.now(),target.rowid,peer);
+  const messages=this.directSnapshot().messages,rooms=new Map();
+  const roomFor=id=>{if(!rooms.has(id))rooms.set(id,discussionFor(messages,peer,id));return rooms.get(id)};
+  const room=roomId?roomFor(roomId):null;if(roomId&&!room?.messages.some(m=>m.id===id&&m.incoming))return;
+  const rows=this.db.prepare("SELECT id,json FROM inbox WHERE rowid<=? AND direct_read_at IS NULL AND json_extract(json,'$.kind')='direct' AND json_extract(json,'$.sender')=?").all(target.rowid,peer);
+  const update=this.db.prepare('UPDATE inbox SET direct_read_at=? WHERE id=?');const now=Date.now();
+  for(const row of rows){const data=parseNewsMessage(JSON.parse(row.json).text),comment=data?.type==='comment'&&roomFor(data.roomId)?.messages.some(m=>m.id===row.id);if(roomId){if(comment&&data.roomId===roomId)update.run(now,row.id)}else if(!comment)update.run(now,row.id);}
  }
  close(){this.db.close();}
 }

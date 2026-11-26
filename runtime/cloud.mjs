@@ -105,7 +105,7 @@ export class DesktopCloud {
  async action(path,body){
   if(!this.client)throw Error('请先连接云端');
   const routes={request:'/v1/requests',decision:'/v1/requests/decision',visit:'/v1/visits','visit-action':'/v1/visits/action'};
-  if(path==='direct-read'){this.client.markDirectRead(body.to,body.id);this.refreshMessages();return;}
+  if(path==='direct-read'){this.client.markDirectRead(body.to,body.id,body.roomId);this.refreshMessages();return;}
   if(path==='direct'){
    if(!this.state.friends.includes(body.to))throw Error('请先添加好友');
    if(this.state.directory.find(p=>p.id===body.to)?.directProtocol!==1)throw Error('对方客户端需升级后才能接收主人直聊');

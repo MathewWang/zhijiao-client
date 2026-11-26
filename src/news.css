@@ -3,3 +3,5 @@
 .news-discuss>summary{font-size:14px;font-weight:600;cursor:pointer;margin-bottom:12px;color:#dfc492}.news-detail .temporary-discussion{margin-top:18px}.news-card{cursor:pointer}
 
 .news-overlay input[type=checkbox]{accent-color:#dabc88}
+
+.news-card.has-new-replies{border-color:#e4bc70;box-shadow:0 0 0 1px #e4bc7025}.news-card .news-new-replies{display:inline-block;margin-top:10px;padding:3px 8px;background:#e4bc70;color:#302313;border-radius:20px;font-size:11px;font-style:normal;font-weight:600}.news-pending-discussions{display:flex;gap:8px;overflow-x:auto;padding:8px 16px;background:#dec3910a;border-bottom:1px solid #dec39125;flex-shrink:0}.news-pending-discussions button{display:flex;flex-direction:column;gap:4px;text-align:left;min-width:180px;max-width:260px;border:1px solid #dec39155;border-radius:10px;background:#332d24;padding:10px 12px;color:#e9ddcb}.news-pending-discussions strong{font-size:11px;color:#e4bc70}.news-pending-discussions span{font-size:12px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}.news-pending-discussions small{font-size:10px;color:#bca781}

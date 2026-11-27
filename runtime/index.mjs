@@ -1,3 +1,4 @@
+import {normalizeCalendar} from '../shared/model-calendar.mjs';
 import {ScheduledTasks} from './scheduled-tasks.mjs';
 import {usesWearitNews,taskUsesModel} from '../shared/news-provider.mjs';
 import {fetchNews,localizeNews,fetchWearitNews,fetchWearitDetail} from './news.mjs';
@@ -158,6 +159,7 @@ const server=http.createServer(async(req,res)=>{
  const id=url.searchParams.get('id');const item=interactions.current(id);const sender=cloud.state.directory.find(d=>d.id===item.from);const recipient=state.agents.find(a=>a.id===cloud.config.localAgentId);
  const asset=skin=>{const c=presets.find(c=>c.id===skin)||presets[0];return 'data:image/png;base64,'+readFileSync(join(root,'public',c.image)).toString('base64');};
  return send(res,200,{html:interactions.artifact(id,{sender:asset(sender?.profile?.skin),recipient:asset(recipient?.skin)},url.searchParams.get('replay')==='1')});}
+ if(url.pathname==='/api/model-calendar'&&req.method==='GET'){if(!cloud.client)throw Error('请先在设置中连接云端，再查看模型日历');const before=url.searchParams.get('before')||'';if(before.length>200)throw Error('无效日历分页');let data;try{data=await cloud.client.api('/v1/model-calendar?'+new URLSearchParams({before}))}catch(e){if(e.message==='接口不存在')throw Error('云端模型日历接口尚未部署，请联系管理员');throw e}return send(res,200,normalizeCalendar(data));}
  if(url.pathname==='/api/news/detail'&&req.method==='GET'){const id=url.searchParams.get('articleId'),roomId=url.searchParams.get('roomId'),room=roomId?discussionFor(cloud.state.direct?.messages||[],url.searchParams.get('peer'),roomId):null,article=roomId?room?.article:localArticle(id);if(!article||article.id!==id)throw Error('新闻不存在');return send(res,200,{article:await newsContent(article)});}
  if(req.method!=='POST')return send(res,405,{error:'不支持的方法'});
  const b=await body(req);const p=url.pathname;

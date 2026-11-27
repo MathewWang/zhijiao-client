@@ -1,9 +1,10 @@
+import {ModelCalendar} from './ModelCalendar';
 import {messageStatus} from '../shared/message-status.mjs';
 import {ErrorNotice} from './ErrorNotice';
 import {parseNewsMessage,discussionFor,type NewsArticle} from '../shared/news-messages.mjs';
 import {NewsCard,NewsDetail} from './News';
 import React,{useEffect,useMemo,useRef,useState} from 'react';
-import {Plus,Send,X,Flower2,Sparkles,DoorOpen,WandSparkles,ArrowUpCircle,MessageSquare,Newspaper,Users,Clock,Settings,PanelRight,Search,EyeOff} from 'lucide-react';
+import {CalendarDays,Plus,Send,X,Flower2,Sparkles,DoorOpen,WandSparkles,ArrowUpCircle,MessageSquare,Newspaper,Users,Clock,Settings,PanelRight,Search,EyeOff} from 'lucide-react';
 import {CompanionAvatar} from './CompanionAvatar';
 import {Interactions,type Effect,type Interaction,type PlayTemplate} from './Interactions';
 import {CloudPanel,type CloudState} from './CloudPanel';
@@ -38,7 +39,7 @@ type State={
  updates?:{currentVersion:string};
 };
 type Entry={id:string;time:number;type:'message'|'draft'|'interaction'|'visit'|'update'|'agent'|'agent-outgoing'};
-type RailView='messages'|'news'|'contacts';
+type RailView='messages'|'news'|'contacts'|'calendar';
 
 function formatShortTime(ts?:number){
  if(!ts)return '';
@@ -322,6 +323,7 @@ export function FriendChat(){
       <Newspaper size={19}/>
       {totalNewsUnread>0&&<i className="rail-dot"/>}
      </button>
+     <button className={'calendar-rail'+(rail==='calendar'?' active':'')} aria-label="模型发布日历" title="模型发布日历" onClick={()=>setRail('calendar')}><CalendarDays size={20}/></button>
      <button className={rail==='contacts'?'active':''} aria-label="好友广场" title="好友与申请" onClick={()=>{setRail('contacts');choose('contacts')}}>
       <Users size={19}/>
       {pendingRequests>0&&<i className="rail-dot"/>}
@@ -335,8 +337,9 @@ export function FriendChat(){
    </nav>
 
    {/* 2. Middle Navigation / News List Column */}
-   <aside className="workbench-list" aria-label={rail==='news'?'今日新闻列表':'会话导航'}>
-    {rail==='news'?<>
+   <aside className="workbench-list" hidden={rail==='calendar'} aria-label={rail==='calendar'?'模型日历说明':rail==='news'?'今日新闻列表':'会话导航'}>
+    {rail!=='calendar'&&<button className="calendar-shortcut" onClick={()=>setRail('calendar')}><CalendarDays size={19}/><span><strong>模型发布日历</strong><small>新模型 · 官方预告 · 发布历史</small></span><b>›</b></button>}
+    {rail==='calendar'?<div className="calendar-about"><CalendarDays size={30}/><h2>模型雷达</h2><p>跟进模型动态，区分已经发生的发布与尚未确定的预测。</p><p><strong>已发布</strong><br/>查看正式发布历史。</p><p><strong>已官宣</strong><br/>来源明确公布的预告。</p><p><strong>预测</strong><br/>保留可信度与依据，不把推测当作确定日期。</p><small>数据来自 WearIT，无需调用本机模型。</small></div>:rail==='news'?<>
      <header className="list-header">
       <h1>今日见闻</h1>
       <button className="list-header-action" onClick={()=>setToolsModal(true)} title="配置新闻定时任务"><Clock size={14}/><span>定时</span></button>
@@ -402,7 +405,7 @@ export function FriendChat(){
 
    {/* 3. Main Conversation / Content Stage */}
    <main className="friend-conversation">
-    {isContacts?<div className="unified-contacts">
+    {rail==='calendar'?<ModelCalendar/>:isContacts?<div className="unified-contacts">
      <header className="friend-chat-heading">
       <div><strong>好友广场与申请</strong><small>管理好友关系、查看在线目录与待审批申请</small></div>
      </header>
@@ -477,7 +480,7 @@ export function FriendChat(){
    </main>
 
    {/* 4. Right Slide-Over Inspector Drawer */}
-   {!isContacts&&inspectorOpen&&<aside className="friend-profile friend-inspector" aria-label="好友公开资料">
+   {rail!=='calendar'&&!isContacts&&inspectorOpen&&<aside className="friend-profile friend-inspector" aria-label="好友公开资料">
     <div className="inspector-header">
      <span>{isAgent?'助理档案':'好友资料'}</span>
      <button aria-label="关闭资料面板" onClick={()=>setInspectorOpen(false)}><X size={14}/></button>

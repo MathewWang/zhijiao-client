@@ -4,6 +4,10 @@ const {app,BrowserWindow,ipcMain,screen,Tray,Menu,nativeImage,shell,session,powe
 const {spawn}=require('node:child_process');
 const path=require('node:path');
 const fs=require('node:fs');
+// Preserve existing renderer storage while giving macOS a product name.
+const existingUserData=app.getPath('userData');
+app.setName('信使');
+app.setPath('userData',existingUserData);
 const {installDesktopRecovery}=require('./desktop-recovery.cjs');
 const logDir=path.join(__dirname,'.data');fs.mkdirSync(logDir,{recursive:true});
 function lifecycleLog(event,detail=''){try{fs.appendFileSync(path.join(logDir,'desktop-lifecycle.log'),`${new Date().toISOString()} ${event} ${detail}\n`,{mode:0o600})}catch{}}
@@ -15,7 +19,9 @@ let desktopState={agents:[],messages:[]},inbox=summarizeInbox(desktopState),tray
 const saveUI=()=>{try{const temp=uiFile+'.tmp';fs.writeFileSync(temp,JSON.stringify(ui),{mode:0o600});fs.renameSync(temp,uiFile)}catch(e){lifecycleLog('ui-save-failed',e.message)}};
 function publishInbox(){const value={...inbox,hidden:ui.hidden};for(const win of [...pets.values(),...histories.values(),...(friendWindow?[friendWindow]:[])])if(!win.isDestroyed())win.webContents.send('desktop-status',value)}
 function refreshTray(){
- publishInbox();if(!tray)return;
+ publishInbox();
+ if(process.platform==='darwin'&&app.dock?.setBadge)app.dock.setBadge(inbox.total?String(Math.min(inbox.total,99))+(inbox.total>99?'+':''):'');
+ if(!tray)return;
  const signature=JSON.stringify([ui.hidden,inbox,desktopState.peerUnread]);if(signature===traySignature)return;traySignature=signature;
  const image=nativeImage.createFromPath(path.join(__dirname,'assets/tray',inbox.total?'unread.png':'idle.png')).resize({width:22,height:22});
  tray.setImage(image);tray.setTitle(inbox.total?String(Math.min(inbox.total,99))+(inbox.total>99?'+':''):'');
@@ -45,7 +51,7 @@ const characterDrags=new Map();
 const pets=new Map(),histories=new Map(),placements=new Map();
 const url='http://127.0.0.1:4317';
 const preferences={preload:path.join(__dirname,'preload.cjs'),contextIsolation:true,nodeIntegration:false};
-const edgePresence=createEdgePresence({screen,suppressed:()=>ui.hidden||!!friendWindow?.isVisible()||quitting,isDragging:win=>characterDrags.has(win),onState:(id,value)=>{const pet=pets.get(id);if(pet&&!pet.isDestroyed())pet.webContents.send('edge-presence',value)}});
+const edgePresence=createEdgePresence({screen,suppressed:()=>ui.hidden||quitting,isDragging:win=>characterDrags.has(win),onState:(id,value)=>{const pet=pets.get(id);if(pet&&!pet.isDestroyed())pet.webContents.send('edge-presence',value)}});
 function updateEdgeNotices(state){for(const a of inbox.agents){const c=state.cloud?.agentId===a.id?state.cloud:null;const key=JSON.stringify([conversation(state,a.id).at(-1)?.id,c?.direct?.messages?.filter(m=>m.incoming&&!m.read).map(m=>m.id),state.peerUnread,c?.requests?.filter(r=>r.recipient===c.deviceId&&r.status==='pending').map(r=>r.id),c?.visits?.filter(v=>v.to===c.deviceId&&v.status==='pending').map(v=>v.id),c?.interactions?.filter(i=>i.to===c.deviceId&&['pending','ready','failed'].includes(i.status)).map(i=>[i.id,i.status])]);edgePresence.notice(a.id,key,a.unread+(a.peerMessages||a.direct)+a.requests+a.plays+a.updates)}}
 let edgeTimer;
 const effectPlayer=createEffectPlayer({BrowserWindow,screen,preferences,url});
@@ -65,19 +71,18 @@ function openHistory(id){
 }
 function openFriend(peer){
  if(typeof peer!=='string'||!['agent','contacts'].includes(peer)&&!desktopState.cloud?.friends?.includes(peer))return;
- for(const pet of pets.values())if(!pet.isDestroyed()){pet.webContents.send('desktop-open','collapse');pet.hide();}
- edgePresence.suspend();
+ for(const pet of pets.values())if(!pet.isDestroyed()){pet.webContents.send('desktop-open','collapse');}
  friendPeer=peer;
  if(!friendWindow||friendWindow.isDestroyed()){
   const pet=pets.values().next().value;let area=screen.getPrimaryDisplay().workArea;
   const bounds=pet?.getBounds(),center=bounds?characterCenter(bounds,placements.get(pet)||'left'):{x:area.x+area.width,y:area.y+area.height/2};
   if(bounds)area=screen.getDisplayNearestPoint(center).workArea;
-  const width=Math.min(780,area.width),height=Math.min(720,area.height);
-  friendWindow=new BrowserWindow({width,height,minWidth:560,minHeight:480,x:Math.max(area.x,Math.min(center.x-width-90,area.x+area.width-width)),y:Math.max(area.y,Math.min(Math.round(center.y-height/2),area.y+area.height-height)),title:'知交信使 · 聊天',backgroundColor:'#24211e',show:false,webPreferences:preferences});
+  const width=Math.min(1080,area.width),height=Math.min(740,area.height);
+  const appIcon=nativeImage.createFromPath(path.join(__dirname,'assets/app-icon.png'));
+  friendWindow=new BrowserWindow({width,height,minWidth:720,minHeight:540,x:Math.max(area.x,Math.min(center.x-width-90,area.x+area.width-width)),y:Math.max(area.y,Math.min(Math.round(center.y-height/2),area.y+area.height-height)),title:'知交信使 · 工作台',icon:appIcon,backgroundColor:'#10141d',...(process.platform==='darwin'?{titleBarStyle:'hiddenInset',trafficLightPosition:{x:16,y:16}}:{}),show:false,webPreferences:preferences});
   const win=friendWindow;win.loadURL(url+'/?friend='+encodeURIComponent(peer));
   win.once('ready-to-show',()=>{if(!win.isDestroyed()){win.show();win.focus()}});
-  win.on('show',()=>{for(const pet of pets.values())if(!pet.isDestroyed())pet.hide()});
-  win.on('close',event=>{if(!quitting){event.preventDefault();win.hide();if(!ui.hidden)showAll();else refreshTray()}});
+  win.on('close',event=>{if(!quitting){event.preventDefault();win.hide();refreshTray()}});
   win.on('closed',()=>{if(friendWindow===win)friendWindow=null});
  }else{friendWindow.show();friendWindow.focus();friendWindow.webContents.send('friend-selected',peer)}
 }
@@ -87,7 +92,7 @@ function createPets(agents){
   if(pets.has(a.id))return;
   // Each companion owns its canvas and conversation; transparent regions pass through.
   const gap=Math.min(640,Math.max(250,(work.width-260)/Math.max(1,agents.length-1)));
-  const canvas={x:Math.max(work.x,work.x+work.width-320-index*gap),y:Math.max(work.y,work.y+work.height-365),width:Math.min(300,work.width),height:Math.min(360,work.height)};
+  const canvas={x:Math.max(work.x,work.x+work.width-330-index*gap),y:Math.max(work.y,work.y+work.height-475),width:Math.min(316,work.width),height:Math.min(470,work.height)};
   const pet=new BrowserWindow({...canvas,title:a.name+' · 知交信使',transparent:true,backgroundColor:'#00000000',frame:false,hasShadow:false,resizable:false,alwaysOnTop:true,skipTaskbar:true,show:!ui.hidden,webPreferences:preferences});
   pets.set(a.id,pet);edgePresence.register(a.id,pet);pet.webContents.on('did-finish-load',()=>pet.webContents.send('edge-presence',edgePresence.get(a.id)));placements.set(pet,'left');pet.loadURL(url+'/?agent='+encodeURIComponent(a.id)+'&panel=left');
   let placementTimer;
@@ -133,8 +138,13 @@ app.on('second-instance',showAll);
 app.whenReady().then(async()=>{
  if(quitting)return;
  edgeTimer=setInterval(()=>edgePresence.tick(),16);edgeTimer.unref?.();
- // macOS accessory apps keep their Tray entry and windows without a Dock icon.
- if(process.platform==='darwin')app.setActivationPolicy('accessory');
+ // Show custom app icon in macOS Dock for easy switching (Cmd+Tab / Dock click).
+ if(process.platform==='darwin'){
+  app.setActivationPolicy('regular');
+  const dockIcon=nativeImage.createFromPath(path.join(__dirname,'assets/app-icon.png'));
+  if(app.dock&&dockIcon&&!dockIcon.isEmpty?.())app.dock.setIcon(dockIcon);
+  await app.dock?.show?.();
+ }
  // Generated opaque-origin frames must not send network traffic outside the local UI.
  session.defaultSession.webRequest.onBeforeRequest({urls:['*://*/*']},(details,callback)=>{let allowed=false;try{const target=new URL(details.url);allowed=['127.0.0.1','localhost'].includes(target.hostname)&&target.port==='4317';}catch{}callback({cancel:!allowed});});
  session.defaultSession.on('will-download',event=>event.preventDefault());
@@ -190,7 +200,12 @@ app.whenReady().then(async()=>{
  ipcMain.on('pointer-through',(e,value)=>{const win=BrowserWindow.fromWebContents(e.sender);if([...pets.values(),...Array.from(visitors.values(),v=>v.win)].includes(win))win.setIgnoreMouseEvents(value===true,{forward:true})});
  visitorTimer=setInterval(()=>void syncVisitors(),1000);void syncVisitors();
  tray=new Tray(nativeImage.createFromPath(path.join(__dirname,'assets/tray/idle.png')).resize({width:22,height:22}));refreshTray();
- app.on('activate',()=>{if(!ui.hidden)showAll()});
+ app.on('activate',()=>{
+  if(setup){setup.show();setup.focus();return}
+  if(friendWindow&&!friendWindow.isDestroyed()){friendWindow.show();friendWindow.focus();return}
+  if(!ui.hidden)showAll();
+  else openFriend(friendPeer||'agent');
+ });
  for(const event of ['resume','unlock-screen','user-did-become-active'])powerMonitor?.on?.(event,()=>edgePresence.recover());
  for(const event of ['display-added','display-removed','display-metrics-changed'])screen.on?.(event,()=>edgePresence.recover());
  disposeRecovery=installDesktopRecovery({powerMonitor,screen,windows:()=>recoveryWindows({hidden:ui.hidden,setup,pets:[...pets.values()].filter(win=>edgePresence.isShown(win)),visitors:Array.from(visitors.values(),v=>v.win),histories:[...histories.values(),...(friendWindow?[friendWindow]:[])]}),isQuitting:()=>quitting,log:lifecycleLog});

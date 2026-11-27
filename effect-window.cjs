@@ -10,7 +10,7 @@ function createEffectPlayer({BrowserWindow,screen,preferences,url}){
    const b=source.getBounds(),display=screen.getDisplayNearestPoint({x:Math.round(b.x+b.width/2),y:Math.round(b.y+b.height/2)});
    const win=new BrowserWindow({...display.bounds,frame:false,type:process.platform==='darwin'?'panel':undefined,enableLargerThanScreen:true,transparent:true,backgroundColor:'#00000000',hasShadow:false,resizable:false,movable:false,minimizable:false,maximizable:false,fullscreenable:false,skipTaskbar:true,show:false,title:'知交信使 · 沉浸式播放',webPreferences:preferences});
    return new Promise(resolve=>{current={win,parent:source,source:sender,resolve,html:payload.html,duration:payload.duration};current.timer=setTimeout(()=>finish({reason:'error',error:'特效窗口加载超时，请重新查看'}),15000);
-    win.setAlwaysOnTop(true,'screen-saver');win.setVisibleOnAllWorkspaces(true,{visibleOnFullScreen:true});win.webContents.setWindowOpenHandler(()=>({action:'deny'}));
+    win.setAlwaysOnTop(true,'screen-saver');win.setVisibleOnAllWorkspaces(true,{visibleOnFullScreen:true,skipTransformProcessType:true});win.webContents.setWindowOpenHandler(()=>({action:'deny'}));
     win.once('ready-to-show',()=>{if(current?.win===win){win.show();win.focus()}});
     win.on('closed',()=>{if(current?.win===win)finish({reason:'closed'})});win.webContents.on('render-process-gone',()=>{if(current?.win===win)finish({reason:'error',error:'特效播放进程已退出'})});
     current.onSourceClosed=()=>{if(current?.win===win)finish({reason:'closed'})};source.once('closed',current.onSourceClosed);win.loadURL(url+'/?effect-stage=1').catch(()=>{if(current?.win===win)finish({reason:'error',error:'特效窗口加载失败'})});

@@ -1,0 +1,88 @@
+/* Zhijiao Client Tech Design System — Deep Space Obsidian × Electric Indigo & Ice Cyan */
+:root {
+  /* Surface hierarchy (4 crisp cool-obsidian tiers) */
+  --zj-bg-rail: #0b0e14;
+  --zj-bg-sidebar: #10141d;
+  --zj-bg-canvas: #131823;
+  --zj-bg-inspector: #0e121b;
+  --zj-bg-elevated: #1a2131;
+  --zj-bg-elevated-hover: #212a3e;
+  --zj-bg-input: #0c1018;
+  --zj-bg-bubble-in: #1c2436;
+  --zj-bg-bubble-out: linear-gradient(135deg, #587dff, #7c66ff);
+
+  /* Tech accents */
+  --zj-accent: #6c8cff;
+  --zj-accent-bright: #95aeff;
+  --zj-accent-soft: #8fa5d6;
+  --zj-accent-cyan: #38e0d2;
+  --zj-accent-grad: linear-gradient(135deg, #5a7eff, #8468ff);
+  --zj-accent-tint: rgba(108, 140, 255, 0.13);
+  --zj-accent-tint-strong: rgba(108, 140, 255, 0.24);
+  --zj-accent-border: rgba(124, 154, 255, 0.36);
+
+  /* Semantic aliases (keep backward-compat with any shared classes) */
+  --zj-gold: var(--zj-accent);
+  --zj-gold-bright: var(--zj-accent-bright);
+  --zj-gold-soft: var(--zj-accent-soft);
+  --zj-gold-tint: var(--zj-accent-tint);
+  --zj-gold-tint-strong: var(--zj-accent-tint-strong);
+  --zj-gold-border: var(--zj-accent-border);
+  --zj-ink-on-gold: #ffffff;
+
+  --zj-online: #34d399;
+  --zj-offline: #647088;
+  --zj-danger: #ff9aa8;
+  --zj-danger-bg: rgba(244, 78, 102, 0.14);
+  --zj-danger-border: rgba(255, 126, 145, 0.36);
+  --zj-badge-red: #f05668;
+
+  /* Ink & borders */
+  --zj-ink: #f1f5ff;
+  --zj-ink-secondary: #bcc7de;
+  --zj-ink-muted: #7c8aa6;
+  --zj-ink-on-accent: #ffffff;
+  --zj-border: rgba(148, 175, 232, 0.13);
+  --zj-border-strong: rgba(148, 175, 232, 0.24);
+  --zj-divider: rgba(148, 175, 232, 0.1);
+
+  /* Typography */
+  --zj-font: -apple-system, BlinkMacSystemFont, 'SF Pro Text', 'PingFang SC', 'Noto Sans SC', sans-serif;
+  --zj-text-xs: 11.5px;
+  --zj-text-sm: 12.5px;
+  --zj-text-base: 14px;
+  --zj-text-md: 15.5px;
+  --zj-text-lg: 18px;
+
+  /* Radii & Shadows */
+  --zj-radius-sm: 8px;
+  --zj-radius-md: 12px;
+  --zj-radius-lg: 16px;
+  --zj-radius-xl: 20px;
+  --zj-shadow-card: 0 8px 28px rgba(4, 7, 15, 0.36), inset 0 1px 0 rgba(255, 255, 255, 0.06);
+  --zj-shadow-float: 0 18px 50px rgba(3, 6, 14, 0.58), inset 0 1px 0 rgba(255, 255, 255, 0.09);
+
+  /* Motion */
+  --zj-ease: cubic-bezier(0.22, 1, 0.36, 1);
+}
+
+.friend-chat-window ::-webkit-scrollbar,
+.news-overlay ::-webkit-scrollbar,
+.play-dialog-backdrop ::-webkit-scrollbar {
+  width: 6px;
+  height: 6px;
+}
+.friend-chat-window ::-webkit-scrollbar-thumb,
+.news-overlay ::-webkit-scrollbar-thumb,
+.play-dialog-backdrop ::-webkit-scrollbar-thumb {
+  background: rgba(138, 164, 224, 0.2);
+  border-radius: 99px;
+}
+.friend-chat-window ::-webkit-scrollbar-thumb:hover,
+.news-overlay ::-webkit-scrollbar-thumb:hover {
+  background: rgba(138, 164, 224, 0.36);
+}
+.friend-chat-window ::-webkit-scrollbar-track,
+.news-overlay ::-webkit-scrollbar-track {
+  background: transparent;
+}
